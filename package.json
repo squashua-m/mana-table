@@ -1,0 +1,28 @@
+{
+  "name": "mana-table",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@canopy-ds/react": "file:../canopy-ds/packages/react",
+    "@canopy-ds/tokens": "file:../canopy-ds/packages/tokens",
+    "@liveblocks/client": "^3.0.0",
+    "@liveblocks/react": "^3.0.0",
+    "framer-motion": "^12.36.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tldraw": "^3.13.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.4",
+    "typescript": "^5.7.0",
+    "vite": "^6.3.0"
+  }
+}
