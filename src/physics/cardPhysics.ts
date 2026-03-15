@@ -28,18 +28,14 @@ export type CardPhysics = {
 
 const store = new Map<string, CardPhysics>();
 
-export function getCardPhysics(
-  shapeId: string,
-  isTapped = false,
-  isFlipped = false
-): CardPhysics {
+export function getCardPhysics(shapeId: string): CardPhysics {
   if (!store.has(shapeId)) {
     store.set(shapeId, {
       scale: motionValue(1),
       cursorX: motionValue(0),
       cursorY: motionValue(0),
-      rotateZ: motionValue(isTapped ? 90 : 0),
-      flipY: motionValue(isFlipped ? 180 : 0),
+      rotateZ: motionValue(0), // always 0 — animation effects drive the value
+      flipY: motionValue(0),   // always 0 — animation effects drive the value
     });
   }
   return store.get(shapeId)!;

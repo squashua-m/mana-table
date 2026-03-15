@@ -11,10 +11,17 @@
  *  - isTapped prop → rotateZ MotionValue (0 or 90, spring-animated, never resets to 0).
  *  - isFlipped prop → flipY MotionValue (0 or 180, spring-animated CSS 3D two-face flip).
  *  - transform-style: preserve-3d on physics + flip layers; overflow: hidden only on face divs.
+ *
+ * Physics ownership:
+ *  - Standalone cards: handlePointerDown here owns scale/tilt/cursorXY.
+ *  - Graveyard (grouped) cards: MtgCanvas owns scale/tilt/cursorXY for the top card.
+ *    handlePointerDown bails out for grouped cards so there's no conflict.
+ *  - MotionValues are always wired to the DOM. Non-top graveyard cards are naturally
+ *    inert because their MotionValues are never driven (scale stays 1, cursorXY stays 0).
  */
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { animate, motion, useSpring, useTransform, useVelocity } from "framer-motion";
-import { HTMLContainer, Rectangle2d, ShapeUtil, type TLShapePartial } from "tldraw";
+import { HTMLContainer, Rectangle2d, ShapeUtil, useEditor, type TLShapePartial } from "tldraw";
 import {
   CARD_BACK_URL,
   CARD_HEIGHT,
@@ -25,86 +32,81 @@ import {
 import { cleanupCardPhysics, getCardPhysics } from "../physics/cardPhysics";
 
 // ─── MtgCardInner ────────────────────────────────────────────────────────────
-// Extracted as a sub-component so React hooks are valid (ShapeUtil.component() is
-// a method, not a function component — hooks must live in actual function components).
 
 function MtgCardInner({ shape }: { shape: MtgCardShape }) {
   const { imageUrl, isTapped, isFlipped, cardName, w, h } = shape.props;
+  const editor = useEditor();
 
-  // Lazy-create stable MotionValues for this shape — persists across re-renders
-  const physics = getCardPhysics(shape.id, isTapped, isFlipped);
+  const physics = getCardPhysics(shape.id);
 
-  // Clean up MotionValues when the shape is removed from the canvas
   useEffect(() => {
     return () => cleanupCardPhysics(shape.id);
   }, [shape.id]);
 
-  // Tap animation — fires when isTapped prop changes
-  const prevTapped = useRef(isTapped);
+  // Tap animation
   useEffect(() => {
-    if (prevTapped.current === isTapped) return;
-    prevTapped.current = isTapped;
-    animate(physics.rotateZ, isTapped ? 90 : 0, {
+    const target = isTapped ? 90 : 0;
+    if (physics.rotateZ.get() === target) return;
+    animate(physics.rotateZ, target, {
       type: "spring",
       stiffness: isTapped ? 200 : 400,
       damping: isTapped ? 22 : 28,
-      onUpdate: (v) => {
-        // TODO: play 'card-tap'/'card-untap' sound at peak of overshoot
-        // if (isTapped && v >= 90) audioEngine.play('card-tap');
-        // if (!isTapped && v <= 0) audioEngine.play('card-untap');
-        void v;
-      },
+      onUpdate: (v) => { void v; },
     });
   }, [isTapped, physics.rotateZ]);
 
-  // Flip animation — fires when isFlipped prop changes
-  const prevFlipped = useRef(isFlipped);
+  // Flip animation
   useEffect(() => {
-    if (prevFlipped.current === isFlipped) return;
-    prevFlipped.current = isFlipped;
-    animate(physics.flipY, isFlipped ? 180 : 0, {
+    const target = isFlipped ? 180 : 0;
+    if (physics.flipY.get() === target) return;
+    animate(physics.flipY, target, {
       type: "spring",
       stiffness: 260,
       damping: 20,
     });
   }, [isFlipped, physics.flipY]);
 
-  // Velocity filter pipeline — per card-physics.md "Chaser" logic:
-  // cursor position → useVelocity → useSpring (smooths direction changes) → useTransform (maps to degrees)
-  // This prevents jerking when drag direction changes (e.g. down → left).
+  // Velocity tilt pipeline — cursor → velocity → spring → degrees
   const velocityX = useVelocity(physics.cursorX);
   const velocityY = useVelocity(physics.cursorY);
   const smoothVX = useSpring(velocityX, { stiffness: 100, damping: 30 });
   const smoothVY = useSpring(velocityY, { stiffness: 100, damping: 30 });
-  // Map smoothed velocity range [-500, 500] px/s to tilt degrees [-20, 20]
-  // Tighter input range = tilt kicks in at normal drag speeds (not just fast flicks)
   const rotateY = useTransform(smoothVX, [-500, 500], [-20, 20]);
   const rotateX = useTransform(smoothVY, [-500, 500], [20, -20]);
 
+  // Shadow fades in as card lifts. Non-top graveyard cards never get scale > 1,
+  // so their shadow stays transparent naturally — no conditional needed.
+  const boxShadow = useTransform(
+    physics.scale,
+    [1, 1.1],
+    [
+      "0 24px 48px rgba(0,0,0,0), 0 8px 16px rgba(0,0,0,0)",
+      "0 24px 48px rgba(0,0,0,0.5), 0 8px 16px rgba(0,0,0,0.3)",
+    ]
+  );
+
+  // Standalone cards own their own physics. Grouped cards are driven by MtgCanvas.
   const handlePointerDown = (_e: React.PointerEvent) => {
-    // Lift animation — per card-physics.md: spring stiffness 300, damping 20
+    const currentParentId = editor.getShape(shape.id)?.parentId;
+    const currentlyInGroup =
+      typeof currentParentId === "string" && currentParentId.startsWith("shape:");
+
+    if (currentlyInGroup) return; // MtgCanvas owns grouped card physics
+
+    editor.bringToFront([shape.id]);
     animate(physics.scale, 1.1, { type: "spring", stiffness: 300, damping: 20 });
 
-    // Document-level listeners so we receive events even after tldraw captures the pointer
     const onMove = (ev: PointerEvent) => {
-      // Feed raw cursor position — useVelocity derives velocity, useSpring smooths it
       physics.cursorX.set(ev.clientX);
       physics.cursorY.set(ev.clientY);
     };
-
     const onUp = () => {
       document.removeEventListener("pointermove", onMove);
-
-      // Settle scale — per card-physics.md: low stiffness for "jiggle when hitting table"
-      // Tilt settles naturally: cursor stops → velocity → 0 → smoothVX/Y spring to 0 → rotateX/Y → 0
       animate(physics.scale, 1.0, { type: "spring", stiffness: 150, damping: 15 });
     };
-
     document.addEventListener("pointermove", onMove);
     document.addEventListener("pointerup", onUp, { once: true });
   };
-
-  const shadowStyle = "0 2px 8px rgba(0,0,0,0.33), 0 1px 3px rgba(0,0,0,0.2)";
 
   return (
     <HTMLContainer
@@ -113,28 +115,27 @@ function MtgCardInner({ shape }: { shape: MtgCardShape }) {
         width: w,
         height: h,
         pointerEvents: "all",
-        // perspective on the container makes 3D rotateX/Y visible
         perspective: "1000px",
         cursor: "grab",
         userSelect: "none",
       }}
       onPointerDown={handlePointerDown}
     >
-      {/* Physics layer: drag lift/tilt + tap rotateZ */}
+      {/* Physics layer: drag lift/tilt + tap rotateZ.
+          MotionValues always wired — non-top graveyard cards are inert
+          because MtgCanvas never drives their values. */}
       <motion.div
         style={{
           width: "100%",
           height: "100%",
           scale: physics.scale,
-          rotateX: rotateX,
-          rotateY: rotateY,
+          rotateX,
+          rotateY,
           rotateZ: physics.rotateZ,
-          // preserve-3d required so nested flip layer's backface-visibility works
           transformStyle: "preserve-3d",
-          // No overflow: hidden here — it would flatten 3D and break backface-visibility
         }}
       >
-        {/* Flip layer: rotateY 0 (front) → 180 (back) */}
+        {/* Flip layer */}
         <motion.div
           style={{
             width: "100%",
@@ -145,7 +146,7 @@ function MtgCardInner({ shape }: { shape: MtgCardShape }) {
           }}
         >
           {/* Front face */}
-          <div
+          <motion.div
             style={{
               position: "absolute",
               inset: 0,
@@ -153,7 +154,8 @@ function MtgCardInner({ shape }: { shape: MtgCardShape }) {
               WebkitBackfaceVisibility: "hidden",
               borderRadius: "var(--canopy-ds-radius-md)",
               overflow: "hidden",
-              boxShadow: shadowStyle,
+              border: "1px solid var(--canopy-ds-color-border-border-glass)",
+              boxShadow,
             }}
           >
             {imageUrl ? (
@@ -180,10 +182,10 @@ function MtgCardInner({ shape }: { shape: MtgCardShape }) {
                 {cardName}
               </div>
             )}
-          </div>
+          </motion.div>
 
-          {/* Back face — pre-rotated 180° so it faces forward when flipY=180 */}
-          <div
+          {/* Back face */}
+          <motion.div
             style={{
               position: "absolute",
               inset: 0,
@@ -192,7 +194,8 @@ function MtgCardInner({ shape }: { shape: MtgCardShape }) {
               transform: "rotateY(180deg)",
               borderRadius: "var(--canopy-ds-radius-md)",
               overflow: "hidden",
-              boxShadow: shadowStyle,
+              border: "1px solid var(--canopy-ds-color-border-border-glass)",
+              boxShadow,
             }}
           >
             <img
@@ -201,7 +204,7 @@ function MtgCardInner({ shape }: { shape: MtgCardShape }) {
               draggable={false}
               style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
             />
-          </div>
+          </motion.div>
         </motion.div>
       </motion.div>
     </HTMLContainer>
@@ -237,18 +240,10 @@ export class MtgCardUtil extends ShapeUtil<MtgCardShape> {
     return <MtgCardInner shape={shape} />;
   }
 
-  override indicator(shape: MtgCardShape) {
-    return (
-      <rect
-        width={shape.props.w}
-        height={shape.props.h}
-        rx={12}
-        ry={12}
-      />
-    );
+  override indicator(_shape: MtgCardShape) {
+    return null;
   }
 
-  // Double-click toggles isFlipped (secondary interaction — card action buttons are primary)
   override onDoubleClick(shape: MtgCardShape): TLShapePartial<MtgCardShape> | void {
     return {
       id: shape.id,

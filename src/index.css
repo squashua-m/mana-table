@@ -14,3 +14,29 @@ body,
 [class*="tlui-watermark"] {
   display: none !important;
 }
+
+/* Hide tldraw selection outlines and handles */
+.tl-selection,
+.tl-selection__bg,
+.tl-selection__fg,
+.tl-handle,
+.tl-handles,
+.tl-cursor-cross {
+  display: none !important;
+}
+
+/* Hide the shape indicator (the outline on selected shapes) */
+.tl-shape-indicator {
+  display: none !important;
+}
+
+/* Hide tldraw group shape chrome — stacks use invisible groups for movement */
+.tl-group {
+  display: none !important;
+}
+.tl-shape[data-shape-type="group"] > svg {
+  display: none !important;
+}
+.tl-shape[data-shape-type="group"] > .tl-shape__overflow {
+  display: none !important;
+}
