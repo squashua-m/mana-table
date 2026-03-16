@@ -1,0 +1,85 @@
+Mana-Table Component Spec: Deck & Arc-Hand Overlay
+1. The Arc-Hand (Overlay Layer)
+The Hand lives on a fixed HUD layer, independent of the infinite canvas zoom/pan. It is designed to feel physical and organic.
+
+A. Visual Styling & Geometry
+
+Container-less Design: No visible box; cards float directly at the bottom of the viewport.
+
+The "Peek" State: By default, cards are tucked off-screen, with only the top 20% visible.
+
+Hover Reveal: Hovering near the bottom edge triggers a vertical slide-up (translateY) to reveal the full cards.
+
+The Fan (Rotational Arc): * Cards are distributed along a subtle arc.
+
+The leftmost card is rotated -5°.
+
+The rightmost card is rotated 5°.
+
+Cards in between are rotated linearly: Rotation=−5+(i× 
+n−1
+10
+​	
+ ).
+
+B. Hover & Selection States
+
+Card Hover: When a specific card is hovered:
+
+It scales up to 1.2x.
+
+Its rotation resets to 0° for legibility.
+
+It gains the highest z-index in the hand.
+
+Drag-to-Play:
+
+Dragging a card out of the hand and across a Y-axis threshold transitions it from Screen Space to Canvas Space.
+
+The card loses its rotation and snaps to the cursor for placement on the table.
+
+2. The Deck (Canvas Layer)
+The Deck is an object situated on the infinite canvas.
+
+A. Appearance
+
+Stack Logic: A visual stack of card backs. We should use our card components for this. This should be similar to how we do the graveyard stack.
+
+
+B. Floating Action Buttons (Left to Right)
+
+Buttons appear on hover or selection, arranged from least to most frequent usage:
+
+Mill 1: (skull icon) Moves the top card to the Graveyard.
+
+Shuffle: (shuffle icon) Randomizes the deck array with a "shake" animation.
+
+Draw 7: (hand icon) Batch moves 7 cards from the Deck array to the Hand state.
+
+Draw 1: (plus icon) Moves the top card from the Deck to the Hand.
+
+C. Tucking (Drop-Zone)
+
+When a card is dragged over the deck, two glass-button zones appear:
+
+Top: Releasing here places the card at index 0.
+
+Bottom: Releasing here places the card at index last.
+
+3. Hotkeys (Logic Only)
+These actions trigger instantly when the relevant object is hovered or selected. No UI labels are required.
+
+S: Shuffle Deck.
+
+D: Draw 1 card (moves from Deck to Hand).
+
+E: Send to Graveyard.
+
+[: (During drag over deck) Place on bottom.
+
+]: (During drag over deck) Place on top.
+
+4. Technical Implementation Notes
+Coordinate Conversion: Use screenToCanvas logic for the hand-to-table transition to ensure cards land exactly where the cursor is pointing regardless of zoom level.
+
+Animations: Use spring physics for the hand arc and the hover scaling to maintain the tactile feel of the multiplayer canvas.

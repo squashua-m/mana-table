@@ -1,13 +1,15 @@
-export type StackType = "graveyard";
+export type StackType = "graveyard" | "deck";
 
 export type StackMeta = {
   type: StackType;
   // Shape IDs ordered bottom (index 0) to top (last index) — mirrors z-order intent
   cardOrder: string[];
+  name?: string;
 };
 
 const stackRegistry = new Map<string, StackMeta>();
 let graveyardGroupId: string | null = null;
+let deckGroupId: string | null = null;
 
 export function registerStack(groupId: string, meta: StackMeta): void {
   stackRegistry.set(groupId, meta);
@@ -20,6 +22,9 @@ export function getStack(groupId: string): StackMeta | undefined {
 export function removeStack(groupId: string): void {
   if (graveyardGroupId === groupId) {
     graveyardGroupId = null;
+  }
+  if (deckGroupId === groupId) {
+    deckGroupId = null;
   }
   stackRegistry.delete(groupId);
 }
@@ -34,6 +39,18 @@ export function getGraveyardGroupId(): string | null {
 
 export function setGraveyard(groupId: string): void {
   graveyardGroupId = groupId;
+}
+
+export function hasDeck(): boolean {
+  return deckGroupId !== null;
+}
+
+export function getDeckGroupId(): string | null {
+  return deckGroupId;
+}
+
+export function setDeck(groupId: string): void {
+  deckGroupId = groupId;
 }
 
 /** Returns the group shape ID for the stack this card belongs to, or null. */

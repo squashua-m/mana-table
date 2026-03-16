@@ -30,6 +30,20 @@ body,
   display: none !important;
 }
 
+/* Deck shuffle shake animation */
+@keyframes deck-shake {
+  0%   { transform: translateX(0); }
+  15%  { transform: translateX(-6px) rotate(-2deg); }
+  30%  { transform: translateX(6px) rotate(2deg); }
+  45%  { transform: translateX(-4px) rotate(-1deg); }
+  60%  { transform: translateX(4px) rotate(1deg); }
+  75%  { transform: translateX(-2px); }
+  100% { transform: translateX(0); }
+}
+.deck-shake {
+  animation: deck-shake 0.5s ease-in-out;
+}
+
 /* Hide tldraw group shape chrome — stacks use invisible groups for movement */
 .tl-group {
   display: none !important;

@@ -1,23 +1,33 @@
 import { useCallback, useEffect, useState } from "react";
 import { Tldraw, type Editor, type TLComponents, type TLShapeId } from "tldraw";
 import { MtgCardUtil } from "../shapes";
+import type { MtgCardShape } from "../shapes";
 import { CanvasBackground } from "./CanvasBackground";
 import { SpawnButton } from "./SpawnButton";
 import { CardActions } from "./CardActions";
 import { ThemeSwitcher } from "./ThemeSwitcher";
+import { OracleToggle } from "./OracleToggle";
 import { LiveCursors } from "./LiveCursors";
 import { CursorPresence } from "./CursorPresence";
 import { StackContextMenu } from "./StackContextMenu";
+import { DeckLoader } from "./DeckLoader";
+import { ArcHand } from "./ArcHand";
 import { animate } from "framer-motion";
-import { getAllStackIds, removeStack, getStack, hasGraveyard } from "../stores/stackStore";
+import { getAllStackIds, removeStack, getStack, hasGraveyard, hasDeck, getDeckGroupId } from "../stores/stackStore";
 import { getCardPhysics } from "../physics/cardPhysics";
-import type { MtgCardShape } from "../shapes";
 import {
   findNearestOverlappingCard,
   stackOnTop,
   tuckUnderneath,
   addCardToGraveyard,
+  drawFromDeck,
+  shuffleDeck,
+  removeTopCardFromStack,
 } from "../utils/stackOperations";
+import { addToHand } from "../stores/handStore";
+import { setCanvasDragging } from "../stores/dragStore";
+
+const HAND_DROP_THRESHOLD = 0.80;
 
 const shapeUtils = [MtgCardUtil];
 
@@ -55,8 +65,6 @@ export function MtgCanvas() {
     const container = editor.getContainer();
 
     // ── Stack physics (top card only) ───────────────────────────────────────
-    // Card-level onPointerDown doesn't fire when tldraw owns the group drag,
-    // so we drive the top card's physics from the editor event + document move.
     let activeTopCardId: string | null = null;
 
     const handleEditorEvent = (info: { type: string; name: string }) => {
@@ -65,9 +73,6 @@ export function MtgCanvas() {
       if (info.name === "pointer_down") {
         activeTopCardId = null;
 
-        // getSelectedShapes() may not yet reflect the newly-clicked shape on
-        // pointer_down (tldraw updates selection after event dispatch), so also
-        // hit-test the shape under the pointer as a fallback.
         const candidates = [
           ...editor.getSelectedShapes(),
           editor.getShapeAtPoint(editor.inputs.currentPagePoint, { hitInside: true }),
@@ -83,6 +88,7 @@ export function MtgCanvas() {
           if (!meta) continue;
           activeTopCardId = meta.cardOrder[meta.cardOrder.length - 1];
           animate(getCardPhysics(activeTopCardId).scale, 1.1, { type: "spring", stiffness: 300, damping: 20 });
+          setCanvasDragging(true);
           break;
         }
       }
@@ -92,6 +98,25 @@ export function MtgCanvas() {
         animate(p.scale, 1.0, { type: "spring", stiffness: 150, damping: 15 });
         p.cursorX.set(0);
         p.cursorY.set(0);
+        setCanvasDragging(false);
+
+        if (editor.inputs.currentScreenPoint.y > window.innerHeight * HAND_DROP_THRESHOLD) {
+          const topShape = editor.getShape(activeTopCardId as TLShapeId);
+          if (topShape) {
+            const groupId = topShape.parentId as string;
+            if (groupId.startsWith("shape:")) {
+              const meta = getStack(groupId);
+              if (meta) {
+                const drawn =
+                  meta.type === "deck"
+                    ? drawFromDeck(editor)
+                    : removeTopCardFromStack(editor, groupId);
+                if (drawn) addToHand(drawn);
+              }
+            }
+          }
+        }
+
         activeTopCardId = null;
       }
     };
@@ -197,6 +222,23 @@ export function MtgCanvas() {
         case "e":
           if (card && hasGraveyard()) addCardToGraveyard(editor, card.id);
           break;
+        case "s":
+          if (hasDeck()) shuffleDeck(editor);
+          break;
+        case "d": {
+          const deckId = getDeckGroupId();
+          if (!deckId) break;
+          const deckSelected = selected.some(
+            (s) => s.id === deckId || s.parentId === deckId
+          );
+          const hovered = editor.getShapeAtPoint(editor.inputs.currentPagePoint, { hitInside: true });
+          const deckHovered = !!hovered && (hovered.id === deckId || hovered.parentId === deckId);
+          if (deckSelected || deckHovered) {
+            const drawn = drawFromDeck(editor);
+            if (drawn) addToHand(drawn);
+          }
+          break;
+        }
       }
     };
 
@@ -226,14 +268,15 @@ export function MtgCanvas() {
         components={components}
         onMount={handleMount}
       >
-        {/* CursorPresence renders inside Tldraw's React context */}
         {editor && <CursorPresence editor={editor} />}
       </Tldraw>
 
-      {/* Fixed overlays render outside tldraw's DOM tree */}
       <SpawnButton editor={editor} />
+      <DeckLoader editor={editor} />
       <CardActions editor={editor} />
+      <ArcHand editor={editor} />
       <ThemeSwitcher />
+      <OracleToggle />
       <LiveCursors />
 
       {contextMenu && editor && (

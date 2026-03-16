@@ -5,6 +5,9 @@ export type MtgCardShapeProps = {
   isFlipped: boolean;
   isTapped: boolean;
   cardName: string;
+  typeLine: string;
+  oracleText: string;
+  flavorText: string;
   w: number;
   h: number;
 };
@@ -16,6 +19,9 @@ export const mtgCardShapeProps: RecordProps<MtgCardShape> = {
   isFlipped: T.boolean,
   isTapped: T.boolean,
   cardName: T.string,
+  typeLine: T.string,
+  oracleText: T.string,
+  flavorText: T.string,
   w: T.number,
   h: T.number,
 };

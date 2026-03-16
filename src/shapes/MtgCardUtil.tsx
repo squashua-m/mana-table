@@ -19,7 +19,7 @@
  *  - MotionValues are always wired to the DOM. Non-top graveyard cards are naturally
  *    inert because their MotionValues are never driven (scale stays 1, cursorXY stays 0).
  */
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { animate, motion, useSpring, useTransform, useVelocity } from "framer-motion";
 import { HTMLContainer, Rectangle2d, ShapeUtil, useEditor, type TLShapePartial } from "tldraw";
 import {
@@ -30,12 +30,20 @@ import {
   type MtgCardShape,
 } from "./MtgCardShape";
 import { cleanupCardPhysics, getCardPhysics } from "../physics/cardPhysics";
+import { addToHand } from "../stores/handStore";
+import { setCanvasDragging } from "../stores/dragStore";
+import { isOracleMode, setHoveredCard, subscribeOracleMode } from "../stores/oracleStore";
+
+const HAND_DROP_THRESHOLD = 0.80;
 
 // ─── MtgCardInner ────────────────────────────────────────────────────────────
 
 function MtgCardInner({ shape }: { shape: MtgCardShape }) {
-  const { imageUrl, isTapped, isFlipped, cardName, w, h } = shape.props;
+  const { imageUrl, isTapped, isFlipped, cardName, typeLine, oracleText, flavorText, w, h } = shape.props;
   const editor = useEditor();
+
+  const [oracleActive, setOracleActive] = useState(isOracleMode);
+  useEffect(() => subscribeOracleMode(setOracleActive), []);
 
   const physics = getCardPhysics(shape.id);
 
@@ -95,17 +103,40 @@ function MtgCardInner({ shape }: { shape: MtgCardShape }) {
 
     editor.bringToFront([shape.id]);
     animate(physics.scale, 1.1, { type: "spring", stiffness: 300, damping: 20 });
+    setCanvasDragging(true);
 
     const onMove = (ev: PointerEvent) => {
       physics.cursorX.set(ev.clientX);
       physics.cursorY.set(ev.clientY);
     };
-    const onUp = () => {
+    const onUp = (ev: PointerEvent) => {
       document.removeEventListener("pointermove", onMove);
       animate(physics.scale, 1.0, { type: "spring", stiffness: 150, damping: 15 });
+      setCanvasDragging(false);
+
+      if (ev.clientY > window.innerHeight * HAND_DROP_THRESHOLD) {
+        const currentShape = editor.getShape(shape.id) as MtgCardShape | undefined;
+        if (currentShape) {
+          addToHand({
+            id: crypto.randomUUID(),
+            imageUrl: currentShape.props.imageUrl,
+            cardName: currentShape.props.cardName,
+          });
+          editor.deleteShapes([shape.id]);
+        }
+      }
     };
     document.addEventListener("pointermove", onMove);
     document.addEventListener("pointerup", onUp, { once: true });
+  };
+
+  const handlePointerEnter = () => {
+    if (!oracleActive) return;
+    setHoveredCard({ cardName, typeLine, oracleText, flavorText });
+  };
+
+  const handlePointerLeave = () => {
+    setHoveredCard(null);
   };
 
   return (
@@ -120,6 +151,8 @@ function MtgCardInner({ shape }: { shape: MtgCardShape }) {
         userSelect: "none",
       }}
       onPointerDown={handlePointerDown}
+      onPointerEnter={handlePointerEnter}
+      onPointerLeave={handlePointerLeave}
     >
       {/* Physics layer: drag lift/tilt + tap rotateZ.
           MotionValues always wired — non-top graveyard cards are inert
@@ -154,7 +187,7 @@ function MtgCardInner({ shape }: { shape: MtgCardShape }) {
               WebkitBackfaceVisibility: "hidden",
               borderRadius: "var(--canopy-ds-radius-md)",
               overflow: "hidden",
-              border: "1px solid var(--canopy-ds-color-border-border-glass)",
+              border: "1px solid var(--canopy-ds-color-border-border-card)",
               boxShadow,
             }}
           >
@@ -194,7 +227,7 @@ function MtgCardInner({ shape }: { shape: MtgCardShape }) {
               transform: "rotateY(180deg)",
               borderRadius: "var(--canopy-ds-radius-md)",
               overflow: "hidden",
-              border: "1px solid var(--canopy-ds-color-border-border-glass)",
+              border: "1px solid var(--canopy-ds-color-border-border-card)",
               boxShadow,
             }}
           >
@@ -223,6 +256,9 @@ export class MtgCardUtil extends ShapeUtil<MtgCardShape> {
       isFlipped: false,
       isTapped: false,
       cardName: "Unknown Card",
+      typeLine: "",
+      oracleText: "",
+      flavorText: "",
       w: CARD_WIDTH,
       h: CARD_HEIGHT,
     };
