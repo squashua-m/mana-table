@@ -30,6 +30,15 @@ export function removeFromHand(id: string): void {
   notify();
 }
 
+export function reorderCard(fromIndex: number, toIndex: number): void {
+  if (fromIndex === toIndex) return;
+  const next = [...cards];
+  const [moved] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, moved);
+  cards = next;
+  notify();
+}
+
 export function subscribeHand(cb: () => void): () => void {
   subs.add(cb);
   return () => subs.delete(cb);

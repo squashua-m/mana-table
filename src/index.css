@@ -1,3 +1,12 @@
+/* Prevent blue tap-highlight flash and accidental text selection during drag.
+   user-select must be on * (not just html/body) so it beats tldraw's own
+   element/class-level user-select rules which would otherwise override inheritance. */
+* {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 /* Make tldraw fill the full viewport */
 html,
 body,
@@ -13,6 +22,12 @@ body,
 .tl-watermark_SEE_LICENSE,
 [class*="tlui-watermark"] {
   display: none !important;
+}
+
+/* Suppress focus outlines on tldraw's non-keyboard canvas elements */
+.tl-shape,
+.tl-html-container {
+  outline: none !important;
 }
 
 /* Hide tldraw selection outlines and handles */

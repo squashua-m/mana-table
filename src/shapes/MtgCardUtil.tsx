@@ -111,10 +111,12 @@ function MtgCardInner({ shape }: { shape: MtgCardShape }) {
     };
     const onUp = (ev: PointerEvent) => {
       document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      document.removeEventListener("pointercancel", onUp);
       animate(physics.scale, 1.0, { type: "spring", stiffness: 150, damping: 15 });
       setCanvasDragging(false);
 
-      if (ev.clientY > window.innerHeight * HAND_DROP_THRESHOLD) {
+      if (ev.type === "pointerup" && ev.clientY > window.innerHeight * HAND_DROP_THRESHOLD) {
         const currentShape = editor.getShape(shape.id) as MtgCardShape | undefined;
         if (currentShape) {
           addToHand({
@@ -127,7 +129,8 @@ function MtgCardInner({ shape }: { shape: MtgCardShape }) {
       }
     };
     document.addEventListener("pointermove", onMove);
-    document.addEventListener("pointerup", onUp, { once: true });
+    document.addEventListener("pointerup", onUp);
+    document.addEventListener("pointercancel", onUp);
   };
 
   const handlePointerEnter = () => {

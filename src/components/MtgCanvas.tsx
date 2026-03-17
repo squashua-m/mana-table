@@ -26,6 +26,8 @@ import {
 } from "../utils/stackOperations";
 import { addToHand } from "../stores/handStore";
 import { setCanvasDragging } from "../stores/dragStore";
+import { useTldrawSync } from "../hooks/useTldrawSync";
+import { useDragSync } from "../hooks/useDragSync";
 
 const HAND_DROP_THRESHOLD = 0.80;
 
@@ -57,6 +59,9 @@ export function MtgCanvas() {
     mountedEditor.setCurrentTool("select");
     setEditor(mountedEditor);
   }, []);
+
+  useTldrawSync(editor);
+  useDragSync(editor);
 
   // Wire up context menu and hotkeys once editor is available
   useEffect(() => {
@@ -131,6 +136,17 @@ export function MtgCanvas() {
     // ── Post-drag deselection ───────────────────────────────────────────────
     const handlePointerUp = () => {
       queueMicrotask(() => editor.selectNone());
+    };
+
+    // Reset grouped-card physics if the pointer is cancelled mid-drag
+    const handleStackPointerCancel = () => {
+      if (!activeTopCardId) return;
+      const p = getCardPhysics(activeTopCardId);
+      animate(p.scale, 1.0, { type: "spring", stiffness: 150, damping: 15 });
+      p.cursorX.set(0);
+      p.cursorY.set(0);
+      setCanvasDragging(false);
+      activeTopCardId = null;
     };
 
     // ── Right-click context menu (unstack) ──────────────────────────────────
@@ -245,6 +261,7 @@ export function MtgCanvas() {
     editor.on("event", handleEditorEvent as Parameters<typeof editor.on<"event">>[1]);
     document.addEventListener("pointermove", handleStackPointerMove, { capture: true });
     container.addEventListener("pointerup", handlePointerUp);
+    container.addEventListener("pointercancel", handleStackPointerCancel);
     container.addEventListener("contextmenu", handleContextMenu as EventListener);
     container.addEventListener("keydown", handleKeyDown);
 
@@ -252,6 +269,7 @@ export function MtgCanvas() {
       editor.off("event", handleEditorEvent as Parameters<typeof editor.on<"event">>[1]);
       document.removeEventListener("pointermove", handleStackPointerMove, { capture: true });
       container.removeEventListener("pointerup", handlePointerUp);
+      container.removeEventListener("pointercancel", handleStackPointerCancel);
       container.removeEventListener("contextmenu", handleContextMenu as EventListener);
       container.removeEventListener("keydown", handleKeyDown);
       cleanupStaleStacks();
@@ -277,7 +295,7 @@ export function MtgCanvas() {
       <ArcHand editor={editor} />
       <ThemeSwitcher />
       <OracleToggle />
-      <LiveCursors />
+      <LiveCursors editor={editor} />
 
       {contextMenu && editor && (
         <StackContextMenu

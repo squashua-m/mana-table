@@ -1,20 +1,30 @@
 import { useMemo } from "react";
 import { IconSprite } from "@canopy-ds/react";
+import { LiveMap } from "@liveblocks/client";
 import { RoomProvider } from "./liveblocks.config";
 import { MtgCanvas } from "./components/MtgCanvas";
 import type { Presence } from "./liveblocks.config";
+
+const PLAYER_COLORS = [
+  "var(--canopy-ds-color-player-player-blue)",
+  "var(--canopy-ds-color-player-player-green)",
+  "var(--canopy-ds-color-player-player-purple)",
+  "var(--canopy-ds-color-player-player-yellow)",
+  "var(--canopy-ds-color-player-player-red)",
+  "var(--canopy-ds-color-player-player-pink)",
+];
 
 function generatePresence(): Presence {
   const id = Math.floor(Math.random() * 9999)
     .toString()
     .padStart(4, "0");
-  const hex = `#${Math.floor(Math.random() * 0xffffff)
-    .toString(16)
-    .padStart(6, "0")}`;
+  const color = PLAYER_COLORS[Math.floor(Math.random() * PLAYER_COLORS.length)];
   return {
     cursor: null,
-    color: hex,
+    color,
     username: `Planeswalker #${id}`,
+    selectedShapeIds: [],
+    dragging: null,
   };
 }
 
@@ -29,7 +39,7 @@ export default function App() {
       <RoomProvider
         id="mana-table-room-1"
         initialPresence={initialPresence}
-        initialStorage={{}}
+        initialStorage={{ shapes: new LiveMap<string, never>(), bindings: new LiveMap<string, never>() }}
       >
         <MtgCanvas />
       </RoomProvider>
