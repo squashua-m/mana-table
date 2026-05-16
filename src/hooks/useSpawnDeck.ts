@@ -1,23 +1,9 @@
 import { useCallback, useState } from "react";
-import { createShapeId, type Editor } from "tldraw";
-import { CARD_HEIGHT, CARD_WIDTH } from "../shapes";
+import { type Editor } from "tldraw";
 import { type DeckEntry } from "../utils/parseDecklist";
 import { createDeck } from "../utils/stackOperations";
-
-type ScryfallCard = {
-  name: string;
-  type_line?: string;
-  oracle_text?: string;
-  flavor_text?: string;
-  image_uris?: { normal: string };
-  card_faces?: Array<{
-    image_uris?: { normal: string };
-    name: string;
-    type_line?: string;
-    oracle_text?: string;
-    flavor_text?: string;
-  }>;
-};
+import { createCardShape, createPlaceholderCardShape } from "../utils/cardShape";
+import type { ScryfallCard } from "../utils/scryfall";
 
 // Scryfall asks for 50–100 ms between requests
 const RATE_LIMIT_MS = 75;
@@ -56,8 +42,8 @@ export function useSpawnDeck(editor: Editor | null) {
 
       for (let i = 0; i < cards.length; i++) {
         const entry = cards[i];
-        const id = createShapeId();
 
+        let shapeId: string;
         try {
           const res = await fetch(
             `https://api.scryfall.com/cards/${entry.set}/${entry.collectorNumber}`
@@ -65,50 +51,20 @@ export function useSpawnDeck(editor: Editor | null) {
           if (!res.ok) throw new Error(`${res.status}`);
 
           const card: ScryfallCard = await res.json();
-          const face = card.card_faces?.[0];
-          const imageUrl = card.image_uris?.normal ?? face?.image_uris?.normal ?? "";
-          const typeLine = card.type_line ?? face?.type_line ?? "";
-          const oracleText = card.oracle_text ?? face?.oracle_text ?? "";
-          const flavorText = card.flavor_text ?? face?.flavor_text ?? "";
-
-          editor.createShape({
-            id,
-            type: "mtg-card",
+          shapeId = createCardShape(editor, card, {
             x: anchorX,
             y: anchorY,
-            props: {
-              imageUrl,
-              cardName: card.name,
-              typeLine,
-              oracleText,
-              flavorText,
-              isFlipped: true,
-              isTapped: false,
-              w: CARD_WIDTH,
-              h: CARD_HEIGHT,
-            },
+            isFlipped: true,
           });
         } catch {
-          editor.createShape({
-            id,
-            type: "mtg-card",
+          shapeId = createPlaceholderCardShape(editor, entry.name, {
             x: anchorX,
             y: anchorY,
-            props: {
-              imageUrl: "",
-              cardName: entry.name,
-              typeLine: "",
-              oracleText: "",
-              flavorText: "",
-              isFlipped: true,
-              isTapped: false,
-              w: CARD_WIDTH,
-              h: CARD_HEIGHT,
-            },
+            isFlipped: true,
           });
         }
 
-        shapeIds.push(id);
+        shapeIds.push(shapeId);
         setProgress({ loaded: i + 1, total });
 
         if (i < cards.length - 1) await delay(RATE_LIMIT_MS);

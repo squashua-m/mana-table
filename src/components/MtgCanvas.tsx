@@ -31,6 +31,8 @@ import { addToHand } from "../stores/handStore";
 import { setCanvasDragging } from "../stores/dragStore";
 import { useTldrawSync } from "../hooks/useTldrawSync";
 import { useDragSync } from "../hooks/useDragSync";
+import { consumePendingDeck } from "../stores/pendingDeckStore";
+import { spawnBuiltDeck } from "../utils/buildDeck";
 
 const HAND_DROP_THRESHOLD = 0.80;
 
@@ -65,6 +67,17 @@ export function MtgCanvas() {
 
   useTldrawSync(editor);
   useDragSync(editor);
+
+  // Consume any deck handed off by the DeckBuilder. Runs once per canvas
+  // mount; consumePendingDeck clears the slot so re-mounts don't re-spawn.
+  useEffect(() => {
+    if (!editor) return;
+    const pending = consumePendingDeck();
+    if (!pending) return;
+    void spawnBuiltDeck(editor, pending).catch((err) => {
+      console.error("spawnBuiltDeck failed", err);
+    });
+  }, [editor]);
 
   // Wire up context menu and hotkeys once editor is available
   useEffect(() => {
