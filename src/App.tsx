@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { IconSprite } from "@canopy-ds/react";
 import { LiveMap } from "@liveblocks/client";
 import { RoomProvider } from "./liveblocks.config";
-import { MtgCanvas } from "./components/MtgCanvas";
+import { AppShell } from "./screens/AppShell";
 import type { Presence } from "./liveblocks.config";
 
 const PLAYER_COLORS = [
@@ -25,6 +25,7 @@ function generatePresence(): Presence {
     username: `Planeswalker #${id}`,
     selectedShapeIds: [],
     dragging: null,
+    screen: "lobby",
   };
 }
 
@@ -41,7 +42,7 @@ export default function App() {
         initialPresence={initialPresence}
         initialStorage={{ shapes: new LiveMap<string, never>(), bindings: new LiveMap<string, never>() }}
       >
-        <MtgCanvas />
+        <AppShell />
       </RoomProvider>
     </>
   );
