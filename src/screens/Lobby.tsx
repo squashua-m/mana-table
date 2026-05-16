@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { LiveList, LiveObject } from "@liveblocks/client";
 import { GlassButton, Heading, Icon, Text } from "@canopy-ds/react";
 import {
   useMutation,
@@ -6,7 +8,11 @@ import {
   useSelf,
   useStorage,
 } from "../liveblocks.config";
+import type { PackLson } from "../liveblocks.config";
 import { SetPicker } from "../components/SetPicker";
+import { fetchBoosterPack } from "../utils/scryfall";
+
+const MAX_DRAFTERS = 8;
 
 const pageStyle: React.CSSProperties = {
   position: "fixed",
@@ -119,22 +125,61 @@ export function Lobby() {
     });
   }, []);
 
-  const startDraft = useMutation(({ storage, self }) => {
-    const draft = storage.get("draft");
-    if (draft.get("state") !== "drafting") return;
-    if (draft.get("hostId") !== self.connectionId) return;
-    if (!draft.get("setCode")) return;
-    draft.update({
-      state: "playing",
-      hostId: null,
-    });
-  }, []);
+  const commitDraftStart = useMutation(
+    ({ storage, self }, drafterIds: number[], packs: PackLson[]) => {
+      const draft = storage.get("draft");
+      if (draft.get("state") !== "drafting") return;
+      if (draft.get("hostId") !== self.connectionId) return;
+      if (!draft.get("setCode")) return;
+
+      const draftersList = draft.get("drafters");
+      drafterIds.forEach((id) => draftersList.push(id));
+
+      const packsList = draft.get("packs");
+      packs.forEach((p) => packsList.push(new LiveObject(p)));
+
+      const seatPacks = draft.get("seatPacks");
+      drafterIds.forEach((id, seatIdx) => {
+        seatPacks.set(String(id), new LiveList<number>([seatIdx]));
+      });
+
+      draft.update({ currentRound: 1, pickNumber: 1 });
+    },
+    []
+  );
 
   const selectSet = useMutation(({ storage, self }, code: string, name: string) => {
     const draft = storage.get("draft");
     if (draft.get("hostId") !== self.connectionId) return;
     draft.update({ setCode: code, setName: name });
   }, []);
+
+  const [generating, setGenerating] = useState(false);
+  const [genProgress, setGenProgress] = useState<{ loaded: number; total: number } | null>(null);
+
+  const handleStartDraft = async () => {
+    if (!setCode || myConnectionId === null) return;
+    const drafterIds = [myConnectionId, ...others.map((o) => o.connectionId)].slice(0, MAX_DRAFTERS);
+    const totalPacks = drafterIds.length * 3;
+
+    setGenerating(true);
+    setGenProgress({ loaded: 0, total: totalPacks });
+    try {
+      const packs: PackLson[] = [];
+      for (let i = 0; i < totalPacks; i++) {
+        const round = Math.floor(i / drafterIds.length) + 1;
+        const cards = await fetchBoosterPack(setCode);
+        packs.push({ id: `pack-${i}`, round, cards });
+        setGenProgress({ loaded: i + 1, total: totalPacks });
+      }
+      commitDraftStart(drafterIds, packs);
+    } catch (err) {
+      console.error("Pack generation failed", err);
+    } finally {
+      setGenerating(false);
+      setGenProgress(null);
+    }
+  };
 
   const subtitle = (() => {
     if (draftState === "drafting" && isHost) return "You're the host. Pick a set and start when ready.";
@@ -209,9 +254,9 @@ export function Lobby() {
             />
             <GlassButton
               size="lg"
-              onClick={() => startDraft()}
+              onClick={handleStartDraft}
               aria-label="Start the draft"
-              disabled={!setCode}
+              disabled={!setCode || generating}
             >
               <span
                 style={{
@@ -221,8 +266,12 @@ export function Lobby() {
                   color: "var(--canopy-ds-color-text-icon-text-default)",
                 }}
               >
-                <Icon name="arrow-right" size="sm" />
-                <Text variant="headline-02" as="span">Start Draft</Text>
+                <Icon name={generating ? "loader" : "arrow-right"} size="sm" />
+                <Text variant="headline-02" as="span">
+                  {generating && genProgress
+                    ? `Opening packs ${genProgress.loaded}/${genProgress.total}…`
+                    : "Start Draft"}
+                </Text>
               </span>
             </GlassButton>
           </>
