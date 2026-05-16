@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { LiveList, LiveObject } from "@liveblocks/client";
-import { GlassButton, Heading, Icon, Text } from "@canopy-ds/react";
+import { GlassButton, Heading, Icon, Pill, Text } from "@canopy-ds/react";
 import {
   useMutation,
   useMyPresence,
@@ -11,6 +11,7 @@ import {
 import type { PackLson } from "../liveblocks.config";
 import { SetPicker } from "../components/SetPicker";
 import { fetchBoosterPack } from "../utils/scryfall";
+import { CARDS_PER_PACK, TOTAL_ROUNDS } from "../utils/draftEngine";
 
 const MAX_DRAFTERS = 8;
 
@@ -43,6 +44,16 @@ const rosterStyle: React.CSSProperties = {
   borderRadius: "var(--canopy-ds-radius-md)",
 };
 
+const spectatorPanelStyle: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "var(--canopy-ds-spacing-2xs)",
+  padding: "var(--canopy-ds-spacing-md)",
+  background: "var(--canopy-ds-color-surface-surface-level-1)",
+  border: "1px solid var(--canopy-ds-color-border-border-default)",
+  borderRadius: "var(--canopy-ds-radius-md)",
+};
+
 const rosterRowStyle: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
@@ -50,16 +61,22 @@ const rosterRowStyle: React.CSSProperties = {
   padding: "var(--canopy-ds-spacing-2xs) var(--canopy-ds-spacing-xs)",
 };
 
+type Role = "drafter" | "spectator" | null;
+
 function PlayerRow({
   color,
   username,
   isSelf,
   isHost,
+  role,
 }: {
   color: string;
   username: string;
   isSelf: boolean;
   isHost: boolean;
+  // null while the draft hasn't been committed (no drafter list yet) — pills
+  // would be meaningless until then.
+  role: Role;
 }) {
   return (
     <div style={rosterRowStyle}>
@@ -98,6 +115,11 @@ function PlayerRow({
           host
         </Text>
       )}
+      {role && (
+        <span style={{ marginLeft: "auto" }}>
+          <Pill>{role === "drafter" ? "Drafter" : "Spectator"}</Pill>
+        </span>
+      )}
     </div>
   );
 }
@@ -111,10 +133,27 @@ export function Lobby() {
   const hostId = useStorage((root) => root.draft?.hostId ?? null);
   const setCode = useStorage((root) => root.draft?.setCode ?? null);
   const setName = useStorage((root) => root.draft?.setName ?? null);
+  const drafters = useStorage((root) => root.draft?.drafters ?? null);
+  const currentRound = useStorage((root) => root.draft?.currentRound ?? 0);
+  const pickNumber = useStorage((root) => root.draft?.pickNumber ?? 0);
 
   const playerCount = others.length + 1;
   const myConnectionId = self?.connectionId ?? null;
   const isHost = hostId !== null && hostId === myConnectionId;
+
+  // `drafters` is empty while the host picks a set; once `commitDraftStart`
+  // fires it becomes the canonical seat list. Spectators are anyone in the
+  // room not in that list — including 9th+ players past the pod cap and
+  // anyone who joined after the draft started.
+  const drafterIds = useMemo(
+    () => (drafters ? Array.from(drafters) : []),
+    [drafters]
+  );
+  const draftCommitted = drafterIds.length > 0;
+  const isDrafter =
+    myConnectionId !== null && drafterIds.includes(myConnectionId);
+  const isSpectator =
+    draftState === "drafting" && draftCommitted && !isDrafter;
 
   const startNewDraft = useMutation(({ storage, self }) => {
     const draft = storage.get("draft");
@@ -184,6 +223,7 @@ export function Lobby() {
   };
 
   const subtitle = (() => {
+    if (isSpectator) return "Draft in progress — you're spectating";
     if (draftState === "drafting" && isHost) return "You're the host. Pick a set and start when ready.";
     if (draftState === "drafting") {
       return setName
@@ -213,12 +253,34 @@ export function Lobby() {
           </Text>
         </div>
 
+        {isSpectator && (
+          <div style={spectatorPanelStyle} role="status" aria-live="polite">
+            <Text
+              variant="headline-02"
+              as="p"
+              style={{ color: "var(--canopy-ds-color-text-icon-text-default)", margin: 0 }}
+            >
+              {setName ?? "Draft"} · Pack {currentRound}/{TOTAL_ROUNDS} · Pick {pickNumber}/{CARDS_PER_PACK}
+            </Text>
+            <Text
+              variant="caption-01"
+              as="span"
+              style={{ color: "var(--canopy-ds-color-text-icon-text-subtle)" }}
+            >
+              You'll join the canvas automatically when the draft finishes.
+            </Text>
+          </div>
+        )}
+
         <div style={rosterStyle}>
           <PlayerRow
             color={myPresence.color}
             username={myPresence.username}
             isSelf
             isHost={isHost}
+            role={
+              draftCommitted ? (isDrafter ? "drafter" : "spectator") : null
+            }
           />
           {others.map((other) => (
             <PlayerRow
@@ -227,6 +289,13 @@ export function Lobby() {
               username={other.presence.username}
               isSelf={false}
               isHost={hostId !== null && hostId === other.connectionId}
+              role={
+                draftCommitted
+                  ? drafterIds.includes(other.connectionId)
+                    ? "drafter"
+                    : "spectator"
+                  : null
+              }
             />
           ))}
         </div>
