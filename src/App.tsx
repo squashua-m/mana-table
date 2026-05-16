@@ -26,6 +26,7 @@ function generatePresence(): Presence {
     selectedShapeIds: [],
     dragging: null,
     screen: "lobby",
+    pickedThisRound: false,
   };
 }
 

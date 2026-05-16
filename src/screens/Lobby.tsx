@@ -139,8 +139,10 @@ export function Lobby() {
       packs.forEach((p) => packsList.push(new LiveObject(p)));
 
       const seatPacks = draft.get("seatPacks");
+      const picks = draft.get("picks");
       drafterIds.forEach((id, seatIdx) => {
         seatPacks.set(String(id), new LiveList<number>([seatIdx]));
+        picks.set(String(id), new LiveList([]));
       });
 
       draft.update({ currentRound: 1, pickNumber: 1 });
