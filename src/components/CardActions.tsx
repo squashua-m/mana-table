@@ -16,8 +16,13 @@ import {
   drawManyFromDeck,
   millFromDeck,
   shuffleDeck,
+  getDeckCardIds,
+  peekFromDeck,
 } from "../utils/stackOperations";
+import { animate } from "framer-motion";
+import { getCardPhysics } from "../physics/cardPhysics";
 import { addToHand, addManyToHand } from "../stores/handStore";
+import { startPeek, addToPeek } from "../stores/peekStore";
 
 type Props = {
   editor: Editor | null;
@@ -250,49 +255,72 @@ export function CardActions({ editor }: Props) {
           return;
         }
 
-        if (hoveredShape?.type === "group") {
-          const bounds = editor.getShapePageBounds(hoveredId);
-          if (!bounds) return;
-          const pos = editor.pageToScreen({ x: bounds.midX, y: bounds.maxY });
-
-          // Deck group
-          if (hoveredShape.id === deckId) {
-            cancelHide();
-            setPosition(pos);
-            setLabelPosition(editor.pageToScreen({ x: bounds.midX, y: bounds.minY }));
-            setTarget({ mode: "deck", groupId: hoveredShape.id });
-            return;
-          }
-
-          // Graveyard group
-          if (hoveredShape.id === graveyardId) {
-            cancelHide();
-            setPosition(pos);
-            setTarget({ mode: "graveyard", groupId: hoveredShape.id });
-            return;
-          }
-
-          const meta = getStack(hoveredShape.id);
-          if (meta) {
-            const topCardId = meta.cardOrder[meta.cardOrder.length - 1];
-            const topCard = editor.getShape(topCardId as TLShapeId) as MtgCardShape | undefined;
-            if (topCard) {
-              cancelHide();
-              setPosition(pos);
-              setTarget({ mode: "single", shape: topCard });
-              return;
-            }
-          }
-        }
       }
 
       if (!isBarHoveredRef.current) {
-        scheduleHide();
+        // Only schedule hide for selection-driven modes.
+        // Deck/graveyard hover is managed by the pointer_move handler below.
+        const mode = targetRef.current?.mode;
+        if (mode !== "deck" && mode !== "graveyard") {
+          scheduleHide();
+        }
       }
     });
 
+    // ── Deck/graveyard hover via direct bounds check on pointer_move ────────
+    // store.listen is unreliable for group hover: tldraw clears hoveredShapeId
+    // when the group is deleted (e.g. during deck operations) and won't re-set
+    // it until the next pointer_move fires updateHoveredShapeId (32ms throttle).
+    // Checking bounds on every pointer_move event bypasses this entirely.
+    const handlePointerEvent = (info: { type: string; name: string }) => {
+      if (info.type !== "pointer" || info.name !== "pointer_move") return;
+      if (editor.inputs.isDragging) return; // drag detection handled by store.listen
+
+      const pt = editor.inputs.currentPagePoint;
+      const freshDeckId = getDeckGroupId();
+      const freshGraveyardId = getGraveyardGroupId();
+
+      if (freshDeckId) {
+        const deckBounds = editor.getShapePageBounds(freshDeckId as TLShapeId);
+        if (
+          deckBounds &&
+          pt.x >= deckBounds.minX && pt.x <= deckBounds.maxX &&
+          pt.y >= deckBounds.minY && pt.y <= deckBounds.maxY
+        ) {
+          cancelHide();
+          setPosition(editor.pageToScreen({ x: deckBounds.midX, y: deckBounds.maxY }));
+          setLabelPosition(editor.pageToScreen({ x: deckBounds.midX, y: deckBounds.minY }));
+          setTarget({ mode: "deck", groupId: freshDeckId });
+          return;
+        }
+      }
+
+      if (freshGraveyardId) {
+        const graveBounds = editor.getShapePageBounds(freshGraveyardId as TLShapeId);
+        if (
+          graveBounds &&
+          pt.x >= graveBounds.minX && pt.x <= graveBounds.maxX &&
+          pt.y >= graveBounds.minY && pt.y <= graveBounds.maxY
+        ) {
+          cancelHide();
+          setPosition(editor.pageToScreen({ x: graveBounds.midX, y: graveBounds.maxY }));
+          setTarget({ mode: "graveyard", groupId: freshGraveyardId });
+          return;
+        }
+      }
+
+      // Cursor moved off deck/graveyard — schedule hide for those modes
+      const mode = targetRef.current?.mode;
+      if ((mode === "deck" || mode === "graveyard") && !isBarHoveredRef.current) {
+        scheduleHide();
+      }
+    };
+
+    editor.on("event", handlePointerEvent as Parameters<typeof editor.on<"event">>[1]);
+
     return () => {
       cleanup();
+      editor.off("event", handlePointerEvent as Parameters<typeof editor.on<"event">>[1]);
       cancelHide();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -304,7 +332,7 @@ export function CardActions({ editor }: Props) {
         left: position.x,
         top: position.y + 8,
         transform: "translateX(-50%)",
-        zIndex: 550,
+        zIndex: 590,
         pointerEvents: "all",
         display: "flex",
         gap: "var(--canopy-ds-spacing-2xs)",
@@ -338,12 +366,44 @@ export function CardActions({ editor }: Props) {
   }
 
   function renderDeckMode() {
-    const { groupId } = target as Extract<ActionTarget, { mode: "deck" }>;
-    const meta = getStack(groupId);
+    // Always read the live deck group ID — target.groupId can be stale if the
+    // deck was dissolved and recreated (e.g. after peekFromDeck) while the bar
+    // was still visible, which caused count to be 0 and all buttons disabled.
+    const freshDeckId = getDeckGroupId();
+    const meta = freshDeckId ? getStack(freshDeckId) : undefined;
     const count = meta?.cardOrder.length ?? 0;
 
     const handleMill = () => { millFromDeck(editor!); };
-    const handleShuffle = () => { shuffleDeck(editor!); };
+    const handleShuffle = async () => {
+      const cardIds = getDeckCardIds();
+      if (!cardIds || cardIds.length === 0) return;
+
+      // Fan out — alternating left/right, distance cycles 60/100/140px
+      cardIds.forEach((id, i) => {
+        const direction = i % 2 === 0 ? 1 : -1;
+        const distance = 60 + (i % 3) * 40;
+        animate(getCardPhysics(id).shuffleX, direction * distance, {
+          type: "spring",
+          stiffness: 200,
+          damping: 18,
+          delay: i * 0.02,
+        });
+      });
+
+      // Wait for fan-out, then shuffle the underlying order
+      await new Promise<void>((r) => setTimeout(r, 300));
+      shuffleDeck(editor!);
+
+      // Spring back to center
+      cardIds.forEach((id, i) => {
+        animate(getCardPhysics(id).shuffleX, 0, {
+          type: "spring",
+          stiffness: 250,
+          damping: 22,
+          delay: i * 0.015,
+        });
+      });
+    };
     const handleDraw7 = () => {
       const drawn = drawManyFromDeck(editor!, 7);
       if (drawn.length > 0) addManyToHand(drawn);
@@ -352,9 +412,18 @@ export function CardActions({ editor }: Props) {
       const drawn = drawFromDeck(editor!);
       if (drawn) addToHand(drawn);
     };
+    const handlePeek = () => {
+      const card = peekFromDeck(editor!);
+      if (!card) return;
+      startPeek();
+      addToPeek(card);
+    };
 
     return (
       <>
+        <GlassButton size="sm" iconOnly aria-label="Peek top card" onClick={handlePeek} disabled={count === 0}>
+          <Icon name="eye" size="sm" />
+        </GlassButton>
         <GlassButton size="sm" iconOnly aria-label="Mill 1 card" onClick={handleMill} disabled={count === 0}>
           <Icon name="frown" size="sm" />
         </GlassButton>
@@ -530,8 +599,9 @@ export function CardActions({ editor }: Props) {
 
   if (!target || !position || !editor) return null;
 
-  const deckLabelMeta = target.mode === "deck" && labelPosition
-    ? getStack((target as Extract<ActionTarget, { mode: "deck" }>).groupId)
+  const freshDeckIdForLabel = getDeckGroupId();
+  const deckLabelMeta = target.mode === "deck" && labelPosition && freshDeckIdForLabel
+    ? getStack(freshDeckIdForLabel)
     : null;
 
   return (
@@ -543,7 +613,7 @@ export function CardActions({ editor }: Props) {
             left: labelPosition.x,
             top: labelPosition.y - 8,
             transform: "translate(-50%, -100%)",
-            zIndex: 550,
+            zIndex: 590,
             pointerEvents: "none",
             display: "flex",
             alignItems: "center",

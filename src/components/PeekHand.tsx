@@ -1,24 +1,43 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { createShapeId, type Editor } from "tldraw";
+import { type Editor, type TLShapeId } from "tldraw";
+import { Icon, Text } from "@canopy-ds/react";
 import { CARD_WIDTH, CARD_HEIGHT } from "../shapes";
-import { getHandCards, removeFromHand, reorderCard, subscribeHand, type HandCard } from "../stores/handStore";
-import { isCanvasDragging, subscribeCanvasDrag } from "../stores/dragStore";
-import { isPeekActive, subscribePeek } from "../stores/peekStore";
+import {
+  isPeekActive,
+  getPeekCards,
+  subscribePeek,
+  removeFromPeek,
+  reorderPeekCard,
+  type PeekCard,
+} from "../stores/peekStore";
+import { addToHand } from "../stores/handStore";
+import {
+  createCardShapeFromPeek,
+  addCardToDeck,
+  addCardToGraveyard,
+  createGraveyard,
+} from "../utils/stackOperations";
+import { getDeckGroupId, hasDeck, hasGraveyard } from "../stores/stackStore";
 
-const HAND_DROP_THRESHOLD = 0.80;
-
-type Props = {
-  editor: Editor | null;
-};
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const PLAY_THRESHOLD_RATIO = 0.70;
-const REVEAL_ENTER_RATIO = 0.85;
-const REVEAL_EXIT_RATIO = 0.75;
 const FAN_SPACING = CARD_WIDTH * 0.6;
 const SPRING = { type: "spring" as const, stiffness: 200, damping: 22 };
 const DIRECTION_LOCK_PX = 10;
 const REORDER_AXIS_RATIO = 1.5;
+
+type DropZoneId = "top" | "bottom" | "hand" | "graveyard";
+
+const DROP_ZONES: { id: DropZoneId; label: string; icon: string }[] = [
+  { id: "top",       label: "Top of Deck",    icon: "arrow-up"   },
+  { id: "bottom",    label: "Bottom of Deck", icon: "arrow-down" },
+  { id: "hand",      label: "To Hand",        icon: "user"       },
+  { id: "graveyard", label: "Graveyard",      icon: "meh"        },
+];
+
+// ─── Fan layout helpers (mirrors ArcHand) ─────────────────────────────────────
 
 function computeFanLayout(total: number, index: number) {
   const rotation = total === 1 ? 0 : -5 + (index * 10) / (total - 1);
@@ -36,23 +55,20 @@ function computeInsertionIndex(cursorX: number, total: number): number {
   return total - 1;
 }
 
-// How far (px) a non-dragged card should shift to make a gap for the dragged card
 function computePreviewXOffset(
   cardIndex: number,
   fromIndex: number,
   insertionIndex: number,
   total: number
 ): number {
-  // Position of this card in the "without dragged card" list
   const effectiveIdx = cardIndex < fromIndex ? cardIndex : cardIndex - 1;
-  // Shift right if the gap opens at or before this card
   const previewIdx = effectiveIdx >= insertionIndex ? effectiveIdx + 1 : effectiveIdx;
   const previewX = computeFanLayout(total, previewIdx).x;
   const currentX = computeFanLayout(total, cardIndex).x;
   return previewX - currentX;
 }
 
-// ─── Reorder drag state shared across all HandCardItems ────────────────────────
+// ─── ReorderDragState ─────────────────────────────────────────────────────────
 
 type ReorderDragState = {
   cardId: string;
@@ -61,25 +77,158 @@ type ReorderDragState = {
   cursorX: number;
 } | null;
 
-// ─── HandCardItem ─────────────────────────────────────────────────────────────
+// ─── Zone detection ───────────────────────────────────────────────────────────
 
-type HandCardItemProps = {
-  card: HandCard;
+function detectActiveZone(
+  cursorX: number,
+  cursorY: number,
+  zoneRefs: React.RefObject<Record<DropZoneId, HTMLDivElement | null>>
+): DropZoneId | null {
+  for (const id of ["top", "bottom", "hand", "graveyard"] as DropZoneId[]) {
+    const el = zoneRefs.current?.[id];
+    if (!el) continue;
+    const rect = el.getBoundingClientRect();
+    if (cursorX >= rect.left && cursorX <= rect.right &&
+        cursorY >= rect.top  && cursorY <= rect.bottom) {
+      return id;
+    }
+  }
+  return null;
+}
+
+// ─── PeekDropZones ────────────────────────────────────────────────────────────
+
+function PeekDropZones({
+  isVisible,
+  activeZone,
+  zoneRefs,
+}: {
+  isVisible: boolean;
+  activeZone: DropZoneId | null;
+  zoneRefs: React.RefObject<Record<DropZoneId, HTMLDivElement | null>>;
+}) {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        top: "50%",
+        left: "50%",
+        transform: "translate(-50%, -50%)",
+        zIndex: 575,
+        display: "flex",
+        gap: "var(--canopy-ds-spacing-sm)",
+        pointerEvents: "none",
+        opacity: isVisible ? 1 : 0,
+        transition: "opacity var(--canopy-ds-motion-fast) ease",
+      }}
+    >
+      {DROP_ZONES.map(({ id, label, icon }) => {
+        const isActive = activeZone === id;
+        return (
+          <div
+            key={id}
+            ref={(el) => {
+              if (zoneRefs.current) zoneRefs.current[id] = el;
+            }}
+            style={{
+              width: 160,
+              height: 80,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "var(--canopy-ds-spacing-2xs)",
+              borderRadius: "var(--canopy-ds-radius-md)",
+              border: isActive
+                ? "2px solid var(--canopy-ds-color-action-action-primary)"
+                : "1px solid var(--canopy-ds-color-border-border-default)",
+              background: isActive
+                ? "color-mix(in srgb, var(--canopy-ds-color-action-action-primary) 15%, var(--canopy-ds-color-surface-surface-level-2))"
+                : "var(--canopy-ds-color-surface-surface-level-2)",
+              backdropFilter: "blur(var(--canopy-ds-blur-md))",
+              transition: "border-color var(--canopy-ds-motion-fast) ease, background var(--canopy-ds-motion-fast) ease",
+            }}
+          >
+            <Icon name={icon} size="md" />
+            <Text variant="caption-01" as="span"
+              style={{ color: "var(--canopy-ds-color-text-icon-text-subtle)" }}>
+              {label}
+            </Text>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── PeekBadge ────────────────────────────────────────────────────────────────
+
+function PeekBadge({ editor, count }: { editor: Editor; count: number }) {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    const update = () => {
+      const deckId = getDeckGroupId();
+      if (!deckId) { setPos(null); return; }
+      const bounds = editor.getShapePageBounds(deckId as TLShapeId);
+      if (!bounds) { setPos(null); return; }
+      setPos(editor.pageToScreen({ x: bounds.midX, y: bounds.minY }));
+    };
+    update();
+    const cleanup = editor.store.listen(update);
+    return cleanup;
+  }, [editor]);
+
+  if (!pos || count === 0) return null;
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        left: pos.x,
+        top: pos.y - 8,
+        transform: "translate(-50%, -100%)",
+        zIndex: 580,
+        display: "flex",
+        alignItems: "center",
+        gap: "var(--canopy-ds-spacing-2xs)",
+        background: "var(--canopy-ds-color-surface-surface-level-2)",
+        border: "1px solid var(--canopy-ds-color-border-border-default)",
+        borderRadius: "var(--canopy-ds-radius-round)",
+        padding: "var(--canopy-ds-spacing-2xs) var(--canopy-ds-spacing-xs)",
+        backdropFilter: "blur(var(--canopy-ds-blur-sm))",
+        pointerEvents: "none",
+      }}
+    >
+      <Icon name="eye" size="sm" />
+      <Text variant="caption-01" as="span">{count}</Text>
+    </div>
+  );
+}
+
+// ─── PeekCardItem ─────────────────────────────────────────────────────────────
+
+type PeekCardItemProps = {
+  card: PeekCard;
   index: number;
   total: number;
-  isRevealed: boolean;
   editor: Editor | null;
-  onRemove: (id: string) => void;
+  onPlace: (card: PeekCard, zone: DropZoneId) => void;
   reorderDrag: ReorderDragState;
   onReorderStart: (cardId: string, fromIndex: number, cursorX: number) => void;
   onReorderMove: (insertionIndex: number, cursorX: number) => void;
   onReorderEnd: (fromIndex: number, toIndex: number) => void;
+  activeZone: DropZoneId | null;
+  onZoneChange: (zone: DropZoneId | null) => void;
+  onShowZones: (show: boolean) => void;
+  zoneRefs: React.RefObject<Record<DropZoneId, HTMLDivElement | null>>;
 };
 
-function HandCardItem({
-  card, index, total, isRevealed, editor, onRemove,
+function PeekCardItem({
+  card, index, total, editor, onPlace,
   reorderDrag, onReorderStart, onReorderMove, onReorderEnd,
-}: HandCardItemProps) {
+  onZoneChange, onShowZones, zoneRefs,
+}: PeekCardItemProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [dragPos, setDragPos] = useState({ x: 0, y: 0 });
@@ -91,7 +240,6 @@ function HandCardItem({
   const layout = computeFanLayout(total, index);
   const isBeingDragged = reorderDrag?.cardId === card.id;
 
-  // Compute how much this card should shift during another card's reorder drag
   let previewXOffset = 0;
   if (reorderDrag && !isBeingDragged) {
     previewXOffset = computePreviewXOffset(
@@ -136,8 +284,17 @@ function HandCardItem({
       return;
     }
 
-    // play mode: float card ghost with cursor
+    // play mode
     setDragPos({ x: e.clientX, y: e.clientY });
+
+    const aboveThreshold = e.clientY < window.innerHeight * PLAY_THRESHOLD_RATIO;
+    if (aboveThreshold) {
+      onShowZones(true);
+      onZoneChange(detectActiveZone(e.clientX, e.clientY, zoneRefs));
+    } else {
+      onShowZones(false);
+      onZoneChange(null);
+    }
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -156,36 +313,21 @@ function HandCardItem({
 
     isDraggingRef.current = false;
     setIsDragging(false);
+    onShowZones(false);
 
-    const threshold = window.innerHeight * PLAY_THRESHOLD_RATIO;
-    if (dragMode.current === "play" && e.clientY < threshold && editor) {
-      const pagePoint = editor.screenToPage({ x: e.clientX, y: e.clientY });
-      editor.batch(() => {
-        editor.createShape({
-          id: createShapeId(),
-          type: "mtg-card",
-          x: pagePoint.x - CARD_WIDTH / 2,
-          y: pagePoint.y - CARD_HEIGHT / 2,
-          props: {
-            imageUrl: card.imageUrl,
-            cardName: card.cardName,
-            isFlipped: false,
-            isTapped: false,
-            w: CARD_WIDTH,
-            h: CARD_HEIGHT,
-          },
-        });
-        editor.selectNone();
-      });
-      onRemove(card.id);
+    const aboveThreshold = e.clientY < window.innerHeight * PLAY_THRESHOLD_RATIO;
+    if (dragMode.current === "play" && aboveThreshold && editor) {
+      const zone = detectActiveZone(e.clientX, e.clientY, zoneRefs);
+      onPlace(card, zone ?? "hand");
     }
 
+    onZoneChange(null);
     dragMode.current = "undecided";
     requestAnimationFrame(() => { blockHoverRef.current = false; });
     e.stopPropagation();
   };
 
-  // During active play drag: follow the cursor as a fixed overlay
+  // Floating ghost during play drag
   if (isDragging && dragMode.current === "play") {
     return (
       <div
@@ -220,7 +362,7 @@ function HandCardItem({
 
   return (
     <>
-      {/* Floating ghost that follows cursor X during reorder drag */}
+      {/* Ghost during reorder drag */}
       {isBeingDragged && reorderDrag && (
         <div
           style={{
@@ -250,11 +392,11 @@ function HandCardItem({
         </div>
       )}
 
-      {/* Resting card — fades when being dragged, shifts when another card is dragged */}
+      {/* Resting card — always fully visible (peek hand is always revealed) */}
       <motion.div
         animate={{
           x: previewXOffset,
-          y: isRevealed ? 0 : CARD_HEIGHT * 0.8,
+          y: 0,
           rotate: isHovered && !isBeingDragged ? 0 : layout.rotation,
           scale: isHovered && !isBeingDragged ? 1.2 : isBeingDragged ? 0.95 : 1,
           opacity: isBeingDragged ? 0.3 : 1,
@@ -324,127 +466,75 @@ function HandCardItem({
   );
 }
 
-// ─── ArcHand ──────────────────────────────────────────────────────────────────
+// ─── PeekHand ─────────────────────────────────────────────────────────────────
 
-export function ArcHand({ editor }: Props) {
+type Props = {
+  editor: Editor | null;
+};
+
+export function PeekHand({ editor }: Props) {
   const [, forceUpdate] = useReducer((x: number) => x + 1, 0);
-  const [isRevealed, setIsRevealed] = useState(false);
-  const [isDraggingCanvas, setIsDraggingCanvas] = useState(isCanvasDragging);
-  const [isInDropZone, setIsInDropZone] = useState(false);
   const [reorderDrag, setReorderDrag] = useState<ReorderDragState>(null);
-  const [isPeeking, setIsPeeking] = useState(isPeekActive);
-  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isDraggingRef = useRef(isCanvasDragging());
+  const [activeZone, setActiveZone] = useState<DropZoneId | null>(null);
+  const [showZones, setShowZones] = useState(false);
+  const zoneRefs = useRef<Record<DropZoneId, HTMLDivElement | null>>({
+    top: null,
+    bottom: null,
+    hand: null,
+    graveyard: null,
+  });
 
-  // Subscribe to hand store changes
-  useEffect(() => subscribeHand(forceUpdate), []);
+  useEffect(() => subscribePeek(forceUpdate), []);
 
-  // Subscribe to peek state — hide ArcHand while peek is active
-  useEffect(() => subscribePeek(() => setIsPeeking(isPeekActive())), []);
+  if (!isPeekActive() || !editor) return null;
 
-  // Subscribe to canvas drag state
-  useEffect(() => {
-    return subscribeCanvasDrag((v) => {
-      isDraggingRef.current = v;
-      setIsDraggingCanvas(v);
-      if (v) {
-        if (hideTimerRef.current !== null) {
-          clearTimeout(hideTimerRef.current);
-          hideTimerRef.current = null;
-        }
-        setIsRevealed(true);
-      } else {
-        setIsInDropZone(false);
+  const cards = getPeekCards();
+
+  function handlePlace(card: PeekCard, zone: DropZoneId) {
+    if (!editor) return;
+
+    switch (zone) {
+      case "hand": {
+        addToHand({ id: crypto.randomUUID(), imageUrl: card.imageUrl, cardName: card.cardName });
+        break;
       }
-    });
-  }, []);
-
-  // Track drop zone activation during canvas drag
-  useEffect(() => {
-    if (!isDraggingCanvas) return;
-    const onMove = (e: PointerEvent) => {
-      setIsInDropZone(e.clientY > window.innerHeight * HAND_DROP_THRESHOLD);
-    };
-    document.addEventListener("pointermove", onMove);
-    return () => document.removeEventListener("pointermove", onMove);
-  }, [isDraggingCanvas]);
-
-  // Reveal / hide on pointer proximity to bottom edge
-  useEffect(() => {
-    const handlePointerMove = (e: PointerEvent) => {
-      if (isDraggingRef.current) return; // drag state already controls reveal
-      const ratio = e.clientY / window.innerHeight;
-
-      if (ratio > REVEAL_ENTER_RATIO) {
-        if (hideTimerRef.current !== null) {
-          clearTimeout(hideTimerRef.current);
-          hideTimerRef.current = null;
-        }
-        setIsRevealed(true);
-      } else if (ratio < REVEAL_EXIT_RATIO) {
-        if (hideTimerRef.current === null) {
-          hideTimerRef.current = setTimeout(() => {
-            setIsRevealed(false);
-            hideTimerRef.current = null;
-          }, 500);
-        }
+      case "top":
+      case "bottom": {
+        if (!hasDeck()) break;
+        const deckId = getDeckGroupId()!;
+        const deckBounds = editor.getShapePageBounds(deckId as TLShapeId);
+        const x = deckBounds?.x ?? 0;
+        const y = deckBounds?.y ?? 0;
+        const newId = createCardShapeFromPeek(editor, card, x, y);
+        addCardToDeck(editor, newId, zone === "top" ? "top" : "bottom");
+        break;
       }
-    };
+      case "graveyard": {
+        const deckId = getDeckGroupId();
+        const deckBounds = deckId ? editor.getShapePageBounds(deckId as TLShapeId) : null;
+        const x = (deckBounds?.x ?? 200) + CARD_WIDTH + 16;
+        const y = deckBounds?.y ?? 200;
+        const newId = createCardShapeFromPeek(editor, card, x, y);
+        if (hasGraveyard()) {
+          addCardToGraveyard(editor, newId);
+        } else {
+          createGraveyard(editor, [newId]);
+        }
+        break;
+      }
+    }
 
-    document.addEventListener("pointermove", handlePointerMove);
-    return () => {
-      document.removeEventListener("pointermove", handlePointerMove);
-      if (hideTimerRef.current !== null) clearTimeout(hideTimerRef.current);
-    };
-  }, []);
-
-  const cards = getHandCards();
-
-  if (isPeeking) return null;
-  if (cards.length === 0 && !isDraggingCanvas) return null;
+    removeFromPeek(card.id);
+  }
 
   return (
     <>
-      {isDraggingCanvas && (
-        <div
-          style={{
-            position: "fixed",
-            bottom: 0,
-            left: 0,
-            width: "100vw",
-            height: "20vh",
-            pointerEvents: "none",
-            zIndex: 555,
-            borderTop: isInDropZone
-              ? "2px solid var(--canopy-ds-color-action-action-primary)"
-              : "2px solid transparent",
-            background: isInDropZone
-              ? "linear-gradient(to top, color-mix(in srgb, var(--canopy-ds-color-action-action-primary) 15%, transparent), transparent)"
-              : "transparent",
-            transition: "border-color var(--canopy-ds-motion-fast) ease, background var(--canopy-ds-motion-fast) ease",
-            display: "flex",
-            alignItems: "flex-end",
-            justifyContent: "center",
-            paddingBottom: "var(--canopy-ds-spacing-lg)",
-          }}
-        >
-          {isInDropZone && (
-            <span
-              style={{
-                color: "var(--canopy-ds-color-text-icon-text-default)",
-                fontSize: 12,
-                fontFamily: "sans-serif",
-                background: "var(--canopy-ds-color-surface-surface-level-2)",
-                padding: "var(--canopy-ds-spacing-2xs) var(--canopy-ds-spacing-xs)",
-                borderRadius: "var(--canopy-ds-radius-round)",
-                border: "1px solid var(--canopy-ds-color-border-border-default)",
-              }}
-            >
-              Add to hand
-            </span>
-          )}
-        </div>
-      )}
+      <PeekBadge editor={editor} count={cards.length} />
+      <PeekDropZones
+        isVisible={showZones}
+        activeZone={activeZone}
+        zoneRefs={zoneRefs}
+      />
       <div
         style={{
           position: "fixed",
@@ -453,18 +543,17 @@ export function ArcHand({ editor }: Props) {
           width: "100vw",
           height: CARD_HEIGHT,
           pointerEvents: "none",
-          zIndex: 560,
+          zIndex: 565,
         }}
       >
         {cards.map((card, i) => (
-          <HandCardItem
+          <PeekCardItem
             key={card.id}
             card={card}
             index={i}
             total={cards.length}
-            isRevealed={isRevealed}
             editor={editor}
-            onRemove={removeFromHand}
+            onPlace={handlePlace}
             reorderDrag={reorderDrag}
             onReorderStart={(cardId, fromIndex, cursorX) =>
               setReorderDrag({ cardId, fromIndex, insertionIndex: fromIndex, cursorX })
@@ -473,9 +562,13 @@ export function ArcHand({ editor }: Props) {
               setReorderDrag(prev => prev ? { ...prev, insertionIndex, cursorX } : null)
             }
             onReorderEnd={(fromIndex, toIndex) => {
-              if (fromIndex !== toIndex) reorderCard(fromIndex, toIndex);
+              if (fromIndex !== toIndex) reorderPeekCard(fromIndex, toIndex);
               setReorderDrag(null);
             }}
+            activeZone={activeZone}
+            onZoneChange={setActiveZone}
+            onShowZones={setShowZones}
+            zoneRefs={zoneRefs}
           />
         ))}
       </div>

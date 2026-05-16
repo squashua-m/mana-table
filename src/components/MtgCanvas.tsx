@@ -12,6 +12,8 @@ import { CursorPresence } from "./CursorPresence";
 import { StackContextMenu } from "./StackContextMenu";
 import { DeckLoader } from "./DeckLoader";
 import { ArcHand } from "./ArcHand";
+import { PeekHand } from "./PeekHand";
+import { ClearCanvas } from "./ClearCanvas";
 import { animate } from "framer-motion";
 import { getAllStackIds, removeStack, getStack, hasGraveyard, hasDeck, getDeckGroupId } from "../stores/stackStore";
 import { getCardPhysics } from "../physics/cardPhysics";
@@ -22,6 +24,7 @@ import {
   addCardToGraveyard,
   drawFromDeck,
   shuffleDeck,
+  getDeckCardIds,
   removeTopCardFromStack,
 } from "../utils/stackOperations";
 import { addToHand } from "../stores/handStore";
@@ -238,9 +241,33 @@ export function MtgCanvas() {
         case "e":
           if (card && hasGraveyard()) addCardToGraveyard(editor, card.id);
           break;
-        case "s":
-          if (hasDeck()) shuffleDeck(editor);
+        case "s": {
+          if (!hasDeck()) break;
+          const shuffleIds = getDeckCardIds();
+          if (!shuffleIds) break;
+          shuffleIds.forEach((id, i) => {
+            const direction = i % 2 === 0 ? 1 : -1;
+            const distance = 60 + (i % 3) * 40;
+            animate(getCardPhysics(id).shuffleX, direction * distance, {
+              type: "spring",
+              stiffness: 200,
+              damping: 18,
+              delay: i * 0.02,
+            });
+          });
+          setTimeout(() => {
+            shuffleDeck(editor);
+            shuffleIds.forEach((id, i) => {
+              animate(getCardPhysics(id).shuffleX, 0, {
+                type: "spring",
+                stiffness: 250,
+                damping: 22,
+                delay: i * 0.015,
+              });
+            });
+          }, 300);
           break;
+        }
         case "d": {
           const deckId = getDeckGroupId();
           if (!deckId) break;
@@ -293,6 +320,8 @@ export function MtgCanvas() {
       <DeckLoader editor={editor} />
       <CardActions editor={editor} />
       <ArcHand editor={editor} />
+      <PeekHand editor={editor} />
+      <ClearCanvas editor={editor} />
       <ThemeSwitcher />
       <OracleToggle />
       <LiveCursors editor={editor} />

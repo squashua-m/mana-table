@@ -1,7 +1,9 @@
 import { createShapeId, type Editor, type TLShapeId } from "tldraw";
 import * as stackStore from "../stores/stackStore";
 import type { HandCard } from "../stores/handStore";
+import type { PeekCard } from "../stores/peekStore";
 import { shuffleArray } from "../utils/deckOperations";
+import { CARD_WIDTH, CARD_HEIGHT } from "../shapes";
 
 // Y offset between cards in a graveyard pile (tight stack)
 const GRAVEYARD_OFFSET = -2;
@@ -420,6 +422,15 @@ export function millFromDeck(editor: Editor): void {
 /**
  * Shuffle the deck — randomizes card order and repositions shapes.
  */
+/** Returns the current deck's card IDs (bottom → top) without modifying anything. */
+export function getDeckCardIds(): string[] | null {
+  const deckGroupId = stackStore.getDeckGroupId();
+  if (!deckGroupId) return null;
+  const meta = stackStore.getStack(deckGroupId);
+  if (!meta || meta.cardOrder.length === 0) return null;
+  return [...meta.cardOrder];
+}
+
 export function shuffleDeck(editor: Editor): void {
   const deckGroupId = stackStore.getDeckGroupId();
   if (!deckGroupId) return;
@@ -486,4 +497,77 @@ export function undoDeck(editor: Editor): void {
   if (!deckGroupId) return;
   stackStore.removeStack(deckGroupId);
   editor.ungroupShapes([deckGroupId as TLShapeId]);
+}
+
+/**
+ * Remove the top card from the deck and return its full data as a PeekCard.
+ * The card shape is deleted from the canvas (same as drawFromDeck but includes
+ * typeLine / oracleText / flavorText for later reconstruction).
+ */
+export function peekFromDeck(editor: Editor): PeekCard | null {
+  const deckGroupId = stackStore.getDeckGroupId();
+  if (!deckGroupId) return null;
+
+  const meta = stackStore.getStack(deckGroupId);
+  if (!meta || meta.cardOrder.length === 0) return null;
+
+  const topCardId = meta.cardOrder.at(-1)!;
+  const remaining = meta.cardOrder.slice(0, -1);
+
+  const topCardShape = editor.getShape(topCardId as TLShapeId) as
+    | { props: { imageUrl: string; cardName: string; typeLine: string; oracleText: string; flavorText: string } }
+    | undefined;
+  if (!topCardShape) return null;
+
+  const { imageUrl, cardName, typeLine, oracleText, flavorText } = topCardShape.props;
+
+  const anchorBounds =
+    remaining.length > 0
+      ? editor.getShapePageBounds(remaining[0] as TLShapeId)
+      : editor.getShapePageBounds(topCardId as TLShapeId);
+  const anchorX = anchorBounds?.x ?? 0;
+  const anchorY = anchorBounds?.y ?? 0;
+
+  stackStore.removeStack(deckGroupId);
+  editor.ungroupShapes([deckGroupId as TLShapeId]);
+
+  if (remaining.length > 0) {
+    applyDeckStack(editor, remaining, anchorX, anchorY, meta.name);
+  }
+
+  editor.deleteShapes([topCardId as TLShapeId]);
+
+  return { id: crypto.randomUUID(), imageUrl, cardName, typeLine, oracleText, flavorText };
+}
+
+/**
+ * Create a new mtg-card shape on the canvas from a PeekCard's data.
+ * Position is temporary — callers immediately pass the ID to addCardToDeck or
+ * addCardToGraveyard, which repositions the shape.
+ */
+export function createCardShapeFromPeek(
+  editor: Editor,
+  card: PeekCard,
+  x: number,
+  y: number
+): TLShapeId {
+  const id = createShapeId();
+  editor.createShape({
+    id,
+    type: "mtg-card",
+    x,
+    y,
+    props: {
+      imageUrl: card.imageUrl,
+      cardName: card.cardName,
+      typeLine: card.typeLine,
+      oracleText: card.oracleText,
+      flavorText: card.flavorText,
+      isFlipped: false,
+      isTapped: false,
+      w: CARD_WIDTH,
+      h: CARD_HEIGHT,
+    },
+  });
+  return id;
 }

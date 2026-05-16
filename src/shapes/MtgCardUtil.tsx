@@ -165,6 +165,7 @@ function MtgCardInner({ shape }: { shape: MtgCardShape }) {
           width: "100%",
           height: "100%",
           scale: physics.scale,
+          x: physics.shuffleX,
           rotateX,
           rotateY,
           rotateZ: physics.rotateZ,

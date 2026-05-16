@@ -43,3 +43,8 @@ export function subscribeHand(cb: () => void): () => void {
   subs.add(cb);
   return () => subs.delete(cb);
 }
+
+export function clearHand(): void {
+  cards = [];
+  notify();
+}

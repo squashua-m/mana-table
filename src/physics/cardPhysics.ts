@@ -24,6 +24,7 @@ export type CardPhysics = {
   cursorY: MotionValue<number>;
   rotateZ: MotionValue<number>; // tap state: 0 (untapped) or 90 (tapped), never resets to 0
   flipY: MotionValue<number>;   // flip state: 0 (front) or 180 (back)
+  shuffleX: MotionValue<number>; // shuffle animation: fan out left/right, spring back to 0
 };
 
 const store = new Map<string, CardPhysics>();
@@ -36,6 +37,7 @@ export function getCardPhysics(shapeId: string): CardPhysics {
       cursorY: motionValue(0),
       rotateZ: motionValue(0), // always 0 — animation effects drive the value
       flipY: motionValue(0),   // always 0 — animation effects drive the value
+      shuffleX: motionValue(0), // always 0 — animated during shuffle, springs back
     });
   }
   return store.get(shapeId)!;

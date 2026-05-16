@@ -146,7 +146,7 @@ export function OracleToggle() {
           aria-label={active ? "Hide oracle text" : "Show oracle text"}
           onClick={toggleOracleMode}
         >
-          <span style={{ color: active ? "var(--canopy-ds-color-text-icon-text-default)" : "var(--canopy-ds-color-text-icon-text-subtle)" }}>
+          <span style={{ color: "var(--canopy-ds-color-text-icon-text-default)" }}>
             <Icon name="book" size="sm" />
           </span>
         </GlassButton>

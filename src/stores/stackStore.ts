@@ -65,3 +65,10 @@ export function getStackForCard(cardShapeId: string): string | null {
 export function getAllStackIds(): string[] {
   return Array.from(stackRegistry.keys());
 }
+
+/** Wipe all stack state — used by clear-canvas. */
+export function clearAllStacks(): void {
+  stackRegistry.clear();
+  graveyardGroupId = null;
+  deckGroupId = null;
+}
