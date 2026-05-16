@@ -10,6 +10,9 @@ export type Presence = {
   selectedShapeIds: string[];
   dragging: { shapeId: string } | null;
   screen: "lobby" | "draft" | "canvas";
+  // True between picking and the next pack being passed. Drives the
+  // "waiting on [names]" indicator. Hover/selection intentionally not synced.
+  pickedThisRound: boolean;
 };
 
 // A single 15-card booster pack as stored in Liveblocks. The full Scryfall
@@ -33,7 +36,7 @@ export type DraftLson = {
   drafters: LiveList<number>;
   packs: LiveList<LiveObject<PackLson>>;
   seatPacks: LiveMap<string, LiveList<number>>;
-  picks: LiveMap<string, LiveList<LiveObject<LsonObject>>>;
+  picks: LiveMap<string, LiveList<ScryfallCard>>;
 };
 
 export type Storage = {
