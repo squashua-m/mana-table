@@ -196,7 +196,8 @@ function applyDeckStack(
   cardOrder: string[],
   anchorX: number,
   anchorY: number,
-  name?: string
+  name?: string,
+  setActive: boolean = true
 ): void {
   editor.updateShapes(
     cardOrder.map((id, i) => ({
@@ -210,7 +211,7 @@ function applyDeckStack(
   const groupId = createShapeId();
 
   stackStore.registerStack(groupId, { type: "deck", cardOrder, name });
-  stackStore.setDeck(groupId);
+  if (setActive) stackStore.setDeck(groupId);
 
   if (cardOrder.length === 1) {
     editor.createShape({
@@ -234,8 +235,16 @@ function applyDeckStack(
 /**
  * Create a new deck group from 1+ card IDs.
  * All cards are set face-down (isFlipped: true) to show card backs.
+ * `setActive` (default true) controls whether this stack becomes the
+ * canvas-wide "active deck" targeted by the d/s hotkeys — pass false when
+ * spawning auxiliary face-down stacks like the basics or sideboard pile.
  */
-export function createDeck(editor: Editor, cardIds: string[], deckName: string): void {
+export function createDeck(
+  editor: Editor,
+  cardIds: string[],
+  deckName: string,
+  setActive: boolean = true
+): void {
   const withPos = cardIds.map((id) => {
     const shape = editor.getShape(id as TLShapeId);
     return { id, y: shape?.y ?? 0, x: shape?.x ?? 0 };
@@ -254,7 +263,7 @@ export function createDeck(editor: Editor, cardIds: string[], deckName: string):
     }))
   );
 
-  applyDeckStack(editor, cardOrder, anchorX, anchorY, deckName);
+  applyDeckStack(editor, cardOrder, anchorX, anchorY, deckName, setActive);
 }
 
 /**

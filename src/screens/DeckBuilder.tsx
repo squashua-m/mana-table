@@ -15,6 +15,7 @@ import {
   emptyBasics,
   parseStoredAllocation,
 } from "../utils/deckBuilder";
+import { setPendingDeck } from "../stores/pendingDeckStore";
 
 const pageStyle: React.CSSProperties = {
   position: "fixed",
@@ -256,6 +257,14 @@ export function DeckBuilder() {
   );
 
   const handleDone = () => {
+    const main: ScryfallCard[] = [];
+    const side: ScryfallCard[] = [];
+    pool.forEach((card, i) => {
+      if (mainIndices.has(i)) main.push(card);
+      else side.push(card);
+    });
+    setPendingDeck({ main, side, basics });
+    if (storageKey) sessionStorage.removeItem(storageKey);
     updateMyPresence({ screen: "canvas" });
   };
 

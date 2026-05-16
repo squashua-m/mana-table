@@ -37,6 +37,7 @@ export type ScryfallCard = {
 let setListCache: ScryfallSet[] | null = null;
 let lastRequestAt = 0;
 let throttleChain: Promise<void> = Promise.resolve();
+const namedCardCache = new Map<string, Promise<ScryfallCard>>();
 
 // Serialize all outbound requests through a single chain so that even
 // concurrent callers respect the 75ms gap. Each caller awaits the previous
@@ -57,6 +58,7 @@ export function _resetScryfallStateForTests(): void {
   setListCache = null;
   lastRequestAt = 0;
   throttleChain = Promise.resolve();
+  namedCardCache.clear();
 }
 
 export async function fetchSetList(): Promise<ScryfallSet[]> {
@@ -96,4 +98,28 @@ export async function fetchBoosterPack(setCode: string): Promise<ScryfallCard[]>
 
   const json = await res.json();
   return json.data as ScryfallCard[];
+}
+
+// Fetch a card by exact name (Scryfall returns the most recent printing).
+// Cached per-name across the session so basic-land lookups during deck spawn
+// hit the network at most once each.
+export async function fetchCardByName(name: string): Promise<ScryfallCard> {
+  const cached = namedCardCache.get(name);
+  if (cached) return cached;
+
+  const promise = (async () => {
+    await throttle();
+    const res = await fetch(
+      `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(name)}`
+    );
+    if (!res.ok) {
+      throw new Error(`Scryfall named lookup failed for "${name}": ${res.status}`);
+    }
+    return (await res.json()) as ScryfallCard;
+  })();
+
+  namedCardCache.set(name, promise);
+  // Evict on failure so subsequent calls retry rather than re-throwing forever.
+  promise.catch(() => namedCardCache.delete(name));
+  return promise;
 }
