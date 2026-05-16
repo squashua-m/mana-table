@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   useMyPresence,
   useSelf,
@@ -37,7 +37,26 @@ export function AppShell() {
     }
   }, [draftState, myPresence.screen, updateMyPresence]);
 
-  if (myPresence.screen === "canvas") return <MtgCanvas />;
+  // Once the player has reached the canvas, keep MtgCanvas mounted for the
+  // rest of the session. Going back to the deck builder via the
+  // "Back to deck-builder" button then overlays the builder on top of the
+  // already-mounted canvas, so tldraw state (the spawned deck and any cards
+  // the player has moved) survives the round-trip — re-entering the builder
+  // is for adjusting the *recorded* allocation, not for resetting the table.
+  const [canvasEntered, setCanvasEntered] = useState(false);
+  useEffect(() => {
+    if (myPresence.screen === "canvas") setCanvasEntered(true);
+  }, [myPresence.screen]);
+
+  if (canvasEntered) {
+    return (
+      <>
+        <MtgCanvas />
+        {myPresence.screen === "deck-build" && <DeckBuilder />}
+      </>
+    );
+  }
+
   if (myPresence.screen === "deck-build") return <DeckBuilder />;
   if (myPresence.screen === "draft") return <DraftRoom />;
   return <Lobby />;

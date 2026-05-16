@@ -263,8 +263,12 @@ export function DeckBuilder() {
       if (mainIndices.has(i)) main.push(card);
       else side.push(card);
     });
+    // setPendingDeck is consumed exactly once by MtgCanvas's first mount.
+    // On subsequent Done clicks (the player came back via the
+    // "Back to deck-builder" button) the canvas is already mounted and
+    // its tldraw state is untouched — per PRD, re-entering the builder
+    // updates the recorded allocation only; trust-based no-reset.
     setPendingDeck({ main, side, basics });
-    if (storageKey) sessionStorage.removeItem(storageKey);
     updateMyPresence({ screen: "canvas" });
   };
 
