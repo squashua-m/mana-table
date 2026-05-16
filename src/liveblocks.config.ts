@@ -9,7 +9,7 @@ export type Presence = {
   username: string; // e.g. "Planeswalker #4823"
   selectedShapeIds: string[];
   dragging: { shapeId: string } | null;
-  screen: "lobby" | "draft" | "canvas";
+  screen: "lobby" | "draft" | "deck-build" | "canvas";
   // True between picking and the next pack being passed. Drives the
   // "waiting on [names]" indicator. Hover/selection intentionally not synced.
   pickedThisRound: boolean;
