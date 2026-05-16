@@ -11,6 +11,7 @@ import { LiveCursors } from "./LiveCursors";
 import { CursorPresence } from "./CursorPresence";
 import { StackContextMenu } from "./StackContextMenu";
 import { DeckLoader } from "./DeckLoader";
+import { BackToBuilder } from "./BackToBuilder";
 import { ArcHand } from "./ArcHand";
 import { PeekHand } from "./PeekHand";
 import { ClearCanvas } from "./ClearCanvas";
@@ -337,6 +338,7 @@ export function MtgCanvas() {
       <ClearCanvas editor={editor} />
       <ThemeSwitcher />
       <OracleToggle />
+      <BackToBuilder />
       <LiveCursors editor={editor} />
 
       {contextMenu && editor && (
