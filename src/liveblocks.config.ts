@@ -1,6 +1,7 @@
 import { createClient, LiveList, LiveMap, LiveObject } from "@liveblocks/client";
 import type { BaseUserMeta, LsonObject } from "@liveblocks/client";
 import { createRoomContext } from "@liveblocks/react";
+import type { ScryfallCard } from "./utils/scryfall";
 
 export type Presence = {
   cursor: { x: number; y: number } | null;
@@ -8,7 +9,16 @@ export type Presence = {
   username: string; // e.g. "Planeswalker #4823"
   selectedShapeIds: string[];
   dragging: { shapeId: string } | null;
-  screen: "lobby" | "canvas";
+  screen: "lobby" | "draft" | "canvas";
+};
+
+// A single 15-card booster pack as stored in Liveblocks. The full Scryfall
+// card JSON is preserved so downstream consumers (deck-builder, canvas
+// spawn) don't need to re-fetch.
+export type PackLson = {
+  id: string;
+  round: number;
+  cards: ScryfallCard[];
 };
 
 // Room-level draft state. Collection fields are stubbed empty so later
@@ -21,7 +31,7 @@ export type DraftLson = {
   currentRound: number;
   pickNumber: number;
   drafters: LiveList<number>;
-  packs: LiveList<LiveObject<LsonObject>>;
+  packs: LiveList<LiveObject<PackLson>>;
   seatPacks: LiveMap<string, LiveList<number>>;
   picks: LiveMap<string, LiveList<LiveObject<LsonObject>>>;
 };
