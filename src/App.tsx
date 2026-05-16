@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { IconSprite } from "@canopy-ds/react";
-import { LiveMap } from "@liveblocks/client";
+import { LiveList, LiveMap, LiveObject } from "@liveblocks/client";
 import { RoomProvider } from "./liveblocks.config";
 import { AppShell } from "./screens/AppShell";
 import type { Presence } from "./liveblocks.config";
@@ -40,7 +40,22 @@ export default function App() {
       <RoomProvider
         id="mana-table-room-1"
         initialPresence={initialPresence}
-        initialStorage={{ shapes: new LiveMap<string, never>(), bindings: new LiveMap<string, never>() }}
+        initialStorage={{
+          shapes: new LiveMap<string, never>(),
+          bindings: new LiveMap<string, never>(),
+          draft: new LiveObject({
+            state: "idle",
+            hostId: null,
+            setCode: null,
+            setName: null,
+            currentRound: 0,
+            pickNumber: 0,
+            drafters: new LiveList<number>([]),
+            packs: new LiveList([]),
+            seatPacks: new LiveMap(),
+            picks: new LiveMap(),
+          }),
+        }}
       >
         <AppShell />
       </RoomProvider>

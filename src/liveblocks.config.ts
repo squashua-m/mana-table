@@ -1,4 +1,4 @@
-import { createClient, LiveMap, LiveObject } from "@liveblocks/client";
+import { createClient, LiveList, LiveMap, LiveObject } from "@liveblocks/client";
 import type { BaseUserMeta, LsonObject } from "@liveblocks/client";
 import { createRoomContext } from "@liveblocks/react";
 
@@ -11,9 +11,25 @@ export type Presence = {
   screen: "lobby" | "canvas";
 };
 
+// Room-level draft state. Collection fields are stubbed empty so later
+// draft-experience slices can fill them without extending the schema.
+export type DraftLson = {
+  state: "idle" | "drafting" | "playing";
+  hostId: number | null;
+  setCode: string | null;
+  setName: string | null;
+  currentRound: number;
+  pickNumber: number;
+  drafters: LiveList<number>;
+  packs: LiveList<LiveObject<LsonObject>>;
+  seatPacks: LiveMap<string, LiveList<number>>;
+  picks: LiveMap<string, LiveList<LiveObject<LsonObject>>>;
+};
+
 export type Storage = {
   shapes: LiveMap<string, LiveObject<LsonObject>>;
   bindings: LiveMap<string, LiveObject<LsonObject>>;
+  draft: LiveObject<DraftLson>;
 };
 
 // Broadcast event for high-fidelity cursor path batching.
@@ -46,4 +62,7 @@ export const {
   useRoom,
   useBroadcastEvent,
   useEventListener,
+  useStorage,
+  useMutation,
+  useSelf,
 } = createRoomContext<Presence, Storage, BaseUserMeta, RoomEvent>(client);
