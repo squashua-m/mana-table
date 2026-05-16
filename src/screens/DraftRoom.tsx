@@ -278,6 +278,15 @@ export function DraftRoom() {
     updateMyPresence({ pickedThisRound: false });
   }, [currentRound, pickNumber, draftState, updateMyPresence]);
 
+  // Once the draft completes (state="playing"), the drafter moves privately
+  // to the deck builder. Spectators (still in the lobby) skip straight to
+  // canvas — that's handled in AppShell.
+  useEffect(() => {
+    if (draftState === "playing" && myPresence.screen === "draft") {
+      updateMyPresence({ screen: "deck-build" });
+    }
+  }, [draftState, myPresence.screen, updateMyPresence]);
+
   const waitingOn: string[] = useMemo(() => {
     if (!drafters || !myPresence.pickedThisRound) return [];
     const result: string[] = [];
