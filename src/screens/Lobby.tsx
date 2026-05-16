@@ -6,6 +6,7 @@ import {
   useSelf,
   useStorage,
 } from "../liveblocks.config";
+import { SetPicker } from "../components/SetPicker";
 
 const pageStyle: React.CSSProperties = {
   position: "fixed",
@@ -102,6 +103,8 @@ export function Lobby() {
 
   const draftState = useStorage((root) => root.draft?.state ?? "idle");
   const hostId = useStorage((root) => root.draft?.hostId ?? null);
+  const setCode = useStorage((root) => root.draft?.setCode ?? null);
+  const setName = useStorage((root) => root.draft?.setName ?? null);
 
   const playerCount = others.length + 1;
   const myConnectionId = self?.connectionId ?? null;
@@ -120,15 +123,26 @@ export function Lobby() {
     const draft = storage.get("draft");
     if (draft.get("state") !== "drafting") return;
     if (draft.get("hostId") !== self.connectionId) return;
+    if (!draft.get("setCode")) return;
     draft.update({
       state: "playing",
       hostId: null,
     });
   }, []);
 
+  const selectSet = useMutation(({ storage, self }, code: string, name: string) => {
+    const draft = storage.get("draft");
+    if (draft.get("hostId") !== self.connectionId) return;
+    draft.update({ setCode: code, setName: name });
+  }, []);
+
   const subtitle = (() => {
-    if (draftState === "drafting" && isHost) return "You're the host. Start when ready.";
-    if (draftState === "drafting") return "Host is setting up the draft…";
+    if (draftState === "drafting" && isHost) return "You're the host. Pick a set and start when ready.";
+    if (draftState === "drafting") {
+      return setName
+        ? `Host is setting up: ${setName}`
+        : "Host is setting up the draft…";
+    }
     return playerCount === 1 ? "1 player in the room" : `${playerCount} players in the room`;
   })();
 
@@ -187,19 +201,31 @@ export function Lobby() {
         )}
 
         {draftState === "drafting" && isHost && (
-          <GlassButton size="lg" onClick={() => startDraft()} aria-label="Start the draft">
-            <span
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "var(--canopy-ds-spacing-xs)",
-                color: "var(--canopy-ds-color-text-icon-text-default)",
-              }}
+          <>
+            <SetPicker
+              selectedCode={setCode}
+              selectedName={setName}
+              onSelect={(code, name) => selectSet(code, name)}
+            />
+            <GlassButton
+              size="lg"
+              onClick={() => startDraft()}
+              aria-label="Start the draft"
+              disabled={!setCode}
             >
-              <Icon name="arrow-right" size="sm" />
-              <Text variant="headline-02" as="span">Start Draft</Text>
-            </span>
-          </GlassButton>
+              <span
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "var(--canopy-ds-spacing-xs)",
+                  color: "var(--canopy-ds-color-text-icon-text-default)",
+                }}
+              >
+                <Icon name="arrow-right" size="sm" />
+                <Text variant="headline-02" as="span">Start Draft</Text>
+              </span>
+            </GlassButton>
+          </>
         )}
       </div>
     </div>
