@@ -8,6 +8,7 @@ export type Presence = {
   username: string; // e.g. "Planeswalker #4823"
   selectedShapeIds: string[];
   dragging: { shapeId: string } | null;
+  screen: "lobby" | "canvas";
 };
 
 export type Storage = {
