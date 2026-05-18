@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { GlassButton, Heading, Icon, Pill, Text } from "@canopy-ds/react";
+import { GlassButton, Heading, Icon, Text } from "@canopy-ds/react";
 import {
   useSelf,
   useStorage,
@@ -343,7 +343,28 @@ export function DeckBuilder() {
                     </div>
                   )}
                   <div style={{ display: "flex", alignItems: "center", gap: "var(--canopy-ds-spacing-2xs)" }}>
-                    <Pill>{inMain ? "Main" : "Side"}</Pill>
+                    <span
+                      style={{
+                        padding:
+                          "var(--canopy-ds-spacing-3xs) var(--canopy-ds-spacing-xs)",
+                        borderRadius: "var(--canopy-ds-radius-round)",
+                        background:
+                          "var(--canopy-ds-color-surface-surface-level-2)",
+                        border:
+                          "1px solid var(--canopy-ds-color-border-border-default)",
+                      }}
+                    >
+                      <Text
+                        variant="caption-01"
+                        as="span"
+                        style={{
+                          color:
+                            "var(--canopy-ds-color-text-icon-text-subtle)",
+                        }}
+                      >
+                        {inMain ? "Main" : "Side"}
+                      </Text>
+                    </span>
                     <Text
                       variant="caption-01"
                       as="span"

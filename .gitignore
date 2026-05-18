@@ -6,3 +6,8 @@ dist/
 .DS_Store
 .claude/.DS_Store
 src/.DS_Store
+
+# Playwright
+test-results/
+playwright-report/
+playwright/.cache/
