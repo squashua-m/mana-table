@@ -20,6 +20,16 @@ mana-table/
 
 **Tech stack:** Vite 6, React 19, TypeScript 5, tldraw v3, Liveblocks v3, @canopy-ds (symlinked via `file:`).
 
+## Testing
+
+| Command | Use |
+|---|---|
+| `npm test` | Unit tests (Vitest, `*.test.ts` files in `src/`) |
+| `npm run test:e2e` | End-to-end smoke test (Playwright, `e2e/`). Boots the dev server on port 5173, opens two browser contexts in a unique Liveblocks room (`?room=...`), and runs the full draft → builder → canvas flow. Scryfall is intercepted with local fixtures so the test is hermetic. |
+| `npm run test:e2e:install` | One-time browser download (Chromium). Run this once after cloning. |
+
+The E2E test relies on `VITE_LIVEBLOCKS_PUBLIC_KEY` in `.env.local` so the dev server can authenticate the test's two browser contexts against a real Liveblocks room.
+
 ---
 
 ## Design System (@canopy-ds)

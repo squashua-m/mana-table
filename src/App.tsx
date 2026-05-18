@@ -30,16 +30,27 @@ function generatePresence(): Presence {
   };
 }
 
+// Optional ?room=... query param lets E2E tests (and quick experiments)
+// isolate state to a fresh Liveblocks room.
+function resolveRoomId(): string {
+  if (typeof window === "undefined") return "mana-table-room-1";
+  return (
+    new URLSearchParams(window.location.search).get("room") ??
+    "mana-table-room-1"
+  );
+}
+
 export default function App() {
   // Generate once on mount — stable across re-renders
   const initialPresence = useMemo(() => generatePresence(), []);
+  const roomId = useMemo(() => resolveRoomId(), []);
 
   return (
     <>
       {/* IconSprite must be mounted once before any <Icon> renders — per iconography.md */}
       <IconSprite />
       <RoomProvider
-        id="mana-table-room-1"
+        id={roomId}
         initialPresence={initialPresence}
         initialStorage={{
           shapes: new LiveMap<string, never>(),

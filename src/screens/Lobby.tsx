@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { LiveList, LiveObject } from "@liveblocks/client";
-import { GlassButton, Heading, Icon, Pill, Text } from "@canopy-ds/react";
+import { GlassButton, Heading, Icon, Text } from "@canopy-ds/react";
 import {
   useMutation,
   useMyPresence,
@@ -116,8 +116,22 @@ function PlayerRow({
         </Text>
       )}
       {role && (
-        <span style={{ marginLeft: "auto" }}>
-          <Pill>{role === "drafter" ? "Drafter" : "Spectator"}</Pill>
+        <span
+          style={{
+            marginLeft: "auto",
+            padding: "var(--canopy-ds-spacing-3xs) var(--canopy-ds-spacing-xs)",
+            borderRadius: "var(--canopy-ds-radius-round)",
+            background: "var(--canopy-ds-color-surface-surface-level-2)",
+            border: "1px solid var(--canopy-ds-color-border-border-default)",
+          }}
+        >
+          <Text
+            variant="caption-01"
+            as="span"
+            style={{ color: "var(--canopy-ds-color-text-icon-text-subtle)" }}
+          >
+            {role === "drafter" ? "Drafter" : "Spectator"}
+          </Text>
         </span>
       )}
     </div>
