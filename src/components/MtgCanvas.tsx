@@ -15,6 +15,7 @@ import { BackToBuilder } from "./BackToBuilder";
 import { ArcHand } from "./ArcHand";
 import { PeekHand } from "./PeekHand";
 import { ClearCanvas } from "./ClearCanvas";
+import { HomeLink } from "./HomeLink";
 import { animate } from "framer-motion";
 import { getAllStackIds, removeStack, getStack, hasGraveyard, hasDeck, getDeckGroupId } from "../stores/stackStore";
 import { getCardPhysics } from "../physics/cardPhysics";
@@ -339,6 +340,7 @@ export function MtgCanvas() {
       <ThemeSwitcher />
       <OracleToggle />
       <BackToBuilder />
+      <HomeLink />
       <LiveCursors editor={editor} />
 
       {contextMenu && editor && (

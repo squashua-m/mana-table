@@ -2,33 +2,37 @@
 // so the UI falls back to its placeholder rendering — fast, deterministic,
 // and avoids any image requests during the test.
 
+// Released date is in the past so the fetchSetList "released" filter keeps
+// the set; pre-2024 keeps it stable across CI clocks.
 export const sets = [
   {
     code: "tst",
     name: "Test Set",
     set_type: "expansion",
-    released_at: "2099-01-01",
+    released_at: "2024-01-01",
     icon_svg_uri: "",
   },
 ];
 
-export const booster = [
-  { id: "tst-001", name: "Test Card 01", type_line: "Creature — Test" },
-  { id: "tst-002", name: "Test Card 02", type_line: "Creature — Test" },
-  { id: "tst-003", name: "Test Card 03", type_line: "Creature — Test" },
-  { id: "tst-004", name: "Test Card 04", type_line: "Creature — Test" },
-  { id: "tst-005", name: "Test Card 05", type_line: "Creature — Test" },
-  { id: "tst-006", name: "Test Card 06", type_line: "Creature — Test" },
-  { id: "tst-007", name: "Test Card 07", type_line: "Instant" },
-  { id: "tst-008", name: "Test Card 08", type_line: "Sorcery" },
-  { id: "tst-009", name: "Test Card 09", type_line: "Enchantment" },
-  { id: "tst-010", name: "Test Card 10", type_line: "Artifact" },
-  { id: "tst-011", name: "Test Card 11", type_line: "Creature — Test" },
-  { id: "tst-012", name: "Test Card 12", type_line: "Instant" },
-  { id: "tst-013", name: "Test Card 13", type_line: "Sorcery" },
-  { id: "tst-014", name: "Test Card 14", type_line: "Creature — Test" },
-  { id: "tst-015", name: "Test Card 15", type_line: "Land" },
+// Full card pool for the test set. fetchBoosterPack picks 15 per pack via
+// rarity slots (1 rare/mythic, 3 uncommons, 11 commons), drawing without
+// duplicates within a pack — so the pool needs enough of each rarity to
+// satisfy that distribution.
+const RARITIES: Array<{ rarity: "common" | "uncommon" | "rare" | "mythic"; count: number; prefix: string }> = [
+  { rarity: "common", count: 30, prefix: "c" },
+  { rarity: "uncommon", count: 12, prefix: "u" },
+  { rarity: "rare", count: 6, prefix: "r" },
+  { rarity: "mythic", count: 2, prefix: "m" },
 ];
+
+export const setCards = RARITIES.flatMap(({ rarity, count, prefix }) =>
+  Array.from({ length: count }, (_, i) => ({
+    id: `tst-${prefix}${i.toString().padStart(2, "0")}`,
+    name: `Test ${rarity} ${i + 1}`,
+    type_line: "Creature — Test",
+    rarity,
+  }))
+);
 
 export const basics: Record<string, { id: string; name: string; type_line: string }> = {
   Plains: { id: "basic-plains", name: "Plains", type_line: "Basic Land — Plains" },

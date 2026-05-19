@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { LiveList, LiveObject } from "@liveblocks/client";
 import { GlassButton, Heading, Icon, Text } from "@canopy-ds/react";
 import {
@@ -10,6 +10,7 @@ import {
 } from "../liveblocks.config";
 import type { PackLson } from "../liveblocks.config";
 import { SetPicker } from "../components/SetPicker";
+import { HomeLink } from "../components/HomeLink";
 import { fetchBoosterPack } from "../utils/scryfall";
 import { CARDS_PER_PACK, TOTAL_ROUNDS } from "../utils/draftEngine";
 
@@ -54,11 +55,48 @@ const spectatorPanelStyle: React.CSSProperties = {
   borderRadius: "var(--canopy-ds-radius-md)",
 };
 
+const noticeStyle: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "var(--canopy-ds-spacing-3xs)",
+  padding: "var(--canopy-ds-spacing-sm) var(--canopy-ds-spacing-md)",
+  background: "var(--canopy-ds-color-surface-surface-level-1)",
+  border: "1px solid var(--canopy-ds-color-border-border-default)",
+  borderRadius: "var(--canopy-ds-radius-md)",
+};
+
 const rosterRowStyle: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
   gap: "var(--canopy-ds-spacing-xs)",
   padding: "var(--canopy-ds-spacing-2xs) var(--canopy-ds-spacing-xs)",
+};
+
+const roomCodePanelStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--canopy-ds-spacing-sm)",
+  padding: "var(--canopy-ds-spacing-sm) var(--canopy-ds-spacing-md)",
+  background: "var(--canopy-ds-color-surface-surface-level-1)",
+  border: "1px solid var(--canopy-ds-color-border-border-default)",
+  borderRadius: "var(--canopy-ds-radius-md)",
+};
+
+const roomCodeButtonStyle: React.CSSProperties = {
+  appearance: "none",
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "var(--canopy-ds-spacing-2xs)",
+  marginLeft: "auto",
+  padding: "var(--canopy-ds-spacing-2xs) var(--canopy-ds-spacing-xs)",
+  background: "var(--canopy-ds-color-surface-surface-level-2)",
+  border: "1px solid var(--canopy-ds-color-border-border-default)",
+  borderRadius: "var(--canopy-ds-radius-sm)",
+  color: "var(--canopy-ds-color-text-icon-text-default)",
+  cursor: "pointer",
+  font: "inherit",
+  transition:
+    "background var(--canopy-ds-motion-fast) var(--canopy-ds-motion-ease-out, ease-out)",
 };
 
 type Role = "drafter" | "spectator" | null;
@@ -212,6 +250,85 @@ export function Lobby() {
   const [generating, setGenerating] = useState(false);
   const [genProgress, setGenProgress] = useState<{ loaded: number; total: number } | null>(null);
 
+  // True if this client arrived by typing/pasting a join code on the landing
+  // page (signalled by `?join=1`). Used to gate the "you're alone — check the
+  // code" hint: hosts who clicked "New Draft" deliberately expect an empty
+  // room and shouldn't see it.
+  const [joinedViaCode] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return new URLSearchParams(window.location.search).get("join") === "1";
+  });
+
+  // True if this client arrived from the landing page's "New Draft" button
+  // (signalled by `?new=1`). Lets us auto-claim the host seat on arrival so
+  // the user doesn't have to tap a second "New Draft" button in the lobby.
+  const [arrivedAsNew] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return new URLSearchParams(window.location.search).get("new") === "1";
+  });
+
+  const [roomCode] = useState(() => {
+    if (typeof window === "undefined") return null;
+    return new URLSearchParams(window.location.search).get("room");
+  });
+  const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current !== null) {
+        window.clearTimeout(copyTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleCopyCode = async () => {
+    if (!roomCode) return;
+    try {
+      await navigator.clipboard.writeText(roomCode);
+      setCopied(true);
+      if (copyTimerRef.current !== null) {
+        window.clearTimeout(copyTimerRef.current);
+      }
+      copyTimerRef.current = window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard API can fail in non-secure contexts — fall back silently;
+      // the code is still visible on-screen for the host to read aloud.
+    }
+  };
+
+  // Clear the `join=1` and `new=1` flags from the URL once we've read them so
+  // the hint/auto-host don't re-fire on refresh, and so a shared room URL
+  // doesn't promote unintended hosts.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!joinedViaCode && !arrivedAsNew) return;
+    const url = new URL(window.location.href);
+    let changed = false;
+    if (url.searchParams.has("join")) {
+      url.searchParams.delete("join");
+      changed = true;
+    }
+    if (url.searchParams.has("new")) {
+      url.searchParams.delete("new");
+      changed = true;
+    }
+    if (changed) window.history.replaceState({}, "", url.toString());
+  }, [joinedViaCode, arrivedAsNew]);
+
+  // Auto-claim host on arrival from landing's New Draft. The startNewDraft
+  // guard (`state !== "idle" return`) makes this idempotent — if a host has
+  // already been claimed (e.g. shared URL race), the mutation no-ops.
+  useEffect(() => {
+    if (!arrivedAsNew) return;
+    if (draftState !== "idle") return;
+    if (myConnectionId === null) return;
+    startNewDraft();
+  }, [arrivedAsNew, draftState, myConnectionId, startNewDraft]);
+
+  const showJoinMismatchHint =
+    joinedViaCode && draftState === "idle" && playerCount === 1;
+
   const handleStartDraft = async () => {
     if (!setCode || myConnectionId === null) return;
     const drafterIds = [myConnectionId, ...others.map((o) => o.connectionId)].slice(0, MAX_DRAFTERS);
@@ -249,6 +366,7 @@ export function Lobby() {
 
   return (
     <div style={pageStyle}>
+      <HomeLink />
       <div style={cardStyle}>
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--canopy-ds-spacing-2xs)" }}>
           <Heading
@@ -266,6 +384,61 @@ export function Lobby() {
             {subtitle}
           </Text>
         </div>
+
+        {roomCode && (
+          <div style={roomCodePanelStyle}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--canopy-ds-spacing-3xs)" }}>
+              <Text
+                variant="caption-01"
+                as="span"
+                style={{ color: "var(--canopy-ds-color-text-icon-text-subtle)" }}
+              >
+                Room code
+              </Text>
+              <Text
+                variant="headline-02"
+                as="span"
+                style={{
+                  color: "var(--canopy-ds-color-text-icon-text-default)",
+                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                  letterSpacing: "0.02em",
+                }}
+              >
+                {roomCode}
+              </Text>
+            </div>
+            <button
+              type="button"
+              onClick={handleCopyCode}
+              style={roomCodeButtonStyle}
+              aria-label={copied ? "Room code copied" : "Copy room code"}
+            >
+              <Icon name={copied ? "check" : "copy"} size="sm" />
+              <Text variant="caption-01" as="span">
+                {copied ? "Copied" : "Copy"}
+              </Text>
+            </button>
+          </div>
+        )}
+
+        {showJoinMismatchHint && (
+          <div style={noticeStyle} role="status" aria-live="polite">
+            <Text
+              variant="body-01"
+              as="p"
+              style={{ color: "var(--canopy-ds-color-text-icon-text-default)", margin: 0 }}
+            >
+              Looks like you're the only one here.
+            </Text>
+            <Text
+              variant="caption-01"
+              as="span"
+              style={{ color: "var(--canopy-ds-color-text-icon-text-subtle)" }}
+            >
+              Double-check the code, or start a new draft and share the link.
+            </Text>
+          </div>
+        )}
 
         {isSpectator && (
           <div style={spectatorPanelStyle} role="status" aria-live="polite">

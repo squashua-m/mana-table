@@ -3,6 +3,7 @@ import { IconSprite } from "@canopy-ds/react";
 import { LiveList, LiveMap, LiveObject } from "@liveblocks/client";
 import { RoomProvider } from "./liveblocks.config";
 import { AppShell } from "./screens/AppShell";
+import { LandingPage } from "./screens/LandingPage";
 import type { Presence } from "./liveblocks.config";
 
 const PLAYER_COLORS = [
@@ -30,20 +31,27 @@ function generatePresence(): Presence {
   };
 }
 
-// Optional ?room=... query param lets E2E tests (and quick experiments)
-// isolate state to a fresh Liveblocks room.
-function resolveRoomId(): string {
-  if (typeof window === "undefined") return "mana-table-room-1";
-  return (
-    new URLSearchParams(window.location.search).get("room") ??
-    "mana-table-room-1"
-  );
+// Drafts are scoped to rooms identified by `?room=<slug>`. Visiting `/`
+// with no room param lands on the LandingPage where the user creates a
+// new draft (generates a slug) or joins an existing one via code.
+function resolveRoomId(): string | null {
+  if (typeof window === "undefined") return null;
+  return new URLSearchParams(window.location.search).get("room");
 }
 
 export default function App() {
   // Generate once on mount — stable across re-renders
   const initialPresence = useMemo(() => generatePresence(), []);
   const roomId = useMemo(() => resolveRoomId(), []);
+
+  if (!roomId) {
+    return (
+      <>
+        <IconSprite />
+        <LandingPage />
+      </>
+    );
+  }
 
   return (
     <>

@@ -16,6 +16,8 @@ import {
   parseStoredAllocation,
 } from "../utils/deckBuilder";
 import { setPendingDeck } from "../stores/pendingDeckStore";
+import { HomeLink } from "../components/HomeLink";
+import { CardPreviewOverlay, useCardPreview } from "../components/CardPreview";
 
 const pageStyle: React.CSSProperties = {
   position: "fixed",
@@ -256,6 +258,8 @@ export function DeckBuilder() {
     [pool, mainIndices, basicsTotal]
   );
 
+  const preview = useCardPreview();
+
   const handleDone = () => {
     const main: ScryfallCard[] = [];
     const side: ScryfallCard[] = [];
@@ -274,6 +278,7 @@ export function DeckBuilder() {
 
   return (
     <div style={pageStyle}>
+      <HomeLink />
       <div style={mainStyle}>
         <div style={headerStyle}>
           <Heading
@@ -310,6 +315,10 @@ export function DeckBuilder() {
                   key={`${card.id}-${i}`}
                   type="button"
                   onClick={() => toggleMain(i)}
+                  onMouseEnter={(e) => preview.show(e, card)}
+                  onMouseLeave={() => preview.hide(card)}
+                  onFocus={(e) => preview.show(e, card)}
+                  onBlur={() => preview.hide(card)}
                   aria-label={`${inMain ? "Remove" : "Add"} ${card.name} ${inMain ? "from main" : "to main"}`}
                   aria-pressed={inMain}
                   style={{
@@ -342,40 +351,16 @@ export function DeckBuilder() {
                       </Text>
                     </div>
                   )}
-                  <div style={{ display: "flex", alignItems: "center", gap: "var(--canopy-ds-spacing-2xs)" }}>
-                    <span
-                      style={{
-                        padding:
-                          "var(--canopy-ds-spacing-3xs) var(--canopy-ds-spacing-xs)",
-                        borderRadius: "var(--canopy-ds-radius-round)",
-                        background:
-                          "var(--canopy-ds-color-surface-surface-level-2)",
-                        border:
-                          "1px solid var(--canopy-ds-color-border-border-default)",
-                      }}
-                    >
-                      <Text
-                        variant="caption-01"
-                        as="span"
-                        style={{
-                          color:
-                            "var(--canopy-ds-color-text-icon-text-subtle)",
-                        }}
-                      >
-                        {inMain ? "Main" : "Side"}
-                      </Text>
-                    </span>
-                    <Text
-                      variant="caption-01"
-                      as="span"
-                      style={{
-                        color: "var(--canopy-ds-color-text-icon-text-default)",
-                        textAlign: "center",
-                      }}
-                    >
-                      {card.name}
-                    </Text>
-                  </div>
+                  <Text
+                    variant="caption-01"
+                    as="span"
+                    style={{
+                      color: "var(--canopy-ds-color-text-icon-text-default)",
+                      textAlign: "center",
+                    }}
+                  >
+                    {card.name}
+                  </Text>
                 </button>
               );
             })}
@@ -481,6 +466,8 @@ export function DeckBuilder() {
           </span>
         </GlassButton>
       </aside>
+
+      <CardPreviewOverlay hovered={preview.hovered} />
     </div>
   );
 }

@@ -5,16 +5,21 @@ const TOTAL_PICKS = 45;
 const MAIN_TARGET = 15;
 const FOREST_TARGET = 5;
 
-// Pick the first available card in the current pack. Picks become disabled
-// immediately after a click (pickedThisRound → true), so each loop iteration
-// waits for a fresh enabled button — which only appears once the round
-// advances and a new pack lands in front of this seat.
+// Pick the first available card in the current pack. The draft uses a
+// two-step pick (select → confirm) to avoid accidental clicks, so each
+// iteration: (1) clicks the first enabled card, (2) clicks the resulting
+// "Confirm pick" button. Cards become disabled immediately after confirm
+// (pickedThisRound → true), so the next loop waits for a fresh pack.
 async function pickFirstCard(page: Page): Promise<void> {
-  const pickable = page
-    .locator('button[aria-label^="Pick "]:not([disabled])')
+  const selectable = page
+    .locator('button[aria-label^="Select "]:not([disabled])')
     .first();
-  await pickable.waitFor({ state: "visible", timeout: 30_000 });
-  await pickable.click();
+  await selectable.waitFor({ state: "visible", timeout: 30_000 });
+  await selectable.click();
+
+  const confirmBtn = page.getByRole("button", { name: /^Confirm pick:/ });
+  await confirmBtn.waitFor({ state: "visible", timeout: 10_000 });
+  await confirmBtn.click();
 }
 
 async function allocateAndFinish(page: Page): Promise<void> {

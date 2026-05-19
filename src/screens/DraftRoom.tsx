@@ -1,6 +1,6 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { LiveList } from "@liveblocks/client";
-import { Heading, Text } from "@canopy-ds/react";
+import { GlassButton, Heading, Text } from "@canopy-ds/react";
 import {
   useMutation,
   useMyPresence,
@@ -9,13 +9,16 @@ import {
   useStorage,
   useUpdateMyPresence,
 } from "../liveblocks.config";
-import type { ScryfallCard } from "../utils/scryfall";
+import { fetchManaSymbols, type ScryfallCard } from "../utils/scryfall";
 import {
   CARDS_PER_PACK,
   TOTAL_ROUNDS,
   nextSeat,
   passDirection,
 } from "../utils/draftEngine";
+import { HomeLink } from "../components/HomeLink";
+import { ManaCost } from "../components/ManaCost";
+import { CardPreviewOverlay, useCardPreview } from "../components/CardPreview";
 
 const pageStyle: React.CSSProperties = {
   position: "fixed",
@@ -102,6 +105,49 @@ const poolListStyle: React.CSSProperties = {
   listStyle: "none",
 };
 
+const poolItemStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--canopy-ds-spacing-2xs)",
+  padding: "var(--canopy-ds-spacing-3xs) 0",
+  cursor: "default",
+  minWidth: 0,
+};
+
+const poolNameStyle: React.CSSProperties = {
+  color: "var(--canopy-ds-color-text-icon-text-default)",
+  flex: 1,
+  minWidth: 0,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
+function manaCostFor(card: ScryfallCard): string {
+  return card.mana_cost ?? card.card_faces?.[0]?.mana_cost ?? "";
+}
+
+const confirmBarStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--canopy-ds-spacing-sm)",
+  padding: "var(--canopy-ds-spacing-sm) var(--canopy-ds-spacing-md)",
+  background: "var(--canopy-ds-color-surface-surface-level-1)",
+  border: "1px solid var(--canopy-ds-color-border-border-default)",
+  borderRadius: "var(--canopy-ds-radius-md)",
+};
+
+const cancelButtonStyle: React.CSSProperties = {
+  appearance: "none",
+  padding: "var(--canopy-ds-spacing-2xs) var(--canopy-ds-spacing-sm)",
+  background: "transparent",
+  color: "var(--canopy-ds-color-text-icon-text-default)",
+  border: "1px solid var(--canopy-ds-color-border-border-default)",
+  borderRadius: "var(--canopy-ds-radius-sm)",
+  cursor: "pointer",
+  font: "inherit",
+};
+
 const waitingStyle: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
@@ -122,6 +168,32 @@ export function DraftRoom() {
   const [myPresence] = useMyPresence();
   const updateMyPresence = useUpdateMyPresence();
   const others = useOthers();
+
+  // Scryfall mana symbology (~84 SVGs). Fetched once per session and memoized
+  // in scryfall.ts — multiple draft sessions per tab share the same map.
+  const [manaSymbols, setManaSymbols] = useState<Map<string, string>>(
+    () => new Map()
+  );
+  useEffect(() => {
+    let cancelled = false;
+    fetchManaSymbols()
+      .then((m) => {
+        if (!cancelled) setManaSymbols(m);
+      })
+      .catch(() => {
+        // Non-fatal — ManaCost falls back to rendering raw tokens.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const preview = useCardPreview();
+
+  // Two-step pick: clicking a card stages it as `pendingPick`; the user
+  // then confirms via the explicit Confirm button. Prevents accidental
+  // picks from people who clicked thinking they'd see card details.
+  const [pendingPick, setPendingPick] = useState<ScryfallCard | null>(null);
 
   const draftState = useStorage((root) => root.draft?.state ?? "idle");
   const setName = useStorage((root) => root.draft?.setName ?? null);
@@ -242,12 +314,23 @@ export function DraftRoom() {
     draft.update({ state: "playing" });
   }, []);
 
-  const handlePick = (card: ScryfallCard) => {
+  const handleCardClick = (card: ScryfallCard) => {
     if (myPresence.pickedThisRound) return;
     if (draftState !== "drafting") return;
-    pickCard(card);
+    // Toggle off when the same card is clicked twice — single confirm path.
+    setPendingPick((prev) => (prev?.id === card.id ? null : card));
+  };
+
+  const confirmPick = () => {
+    if (!pendingPick) return;
+    if (myPresence.pickedThisRound) return;
+    if (draftState !== "drafting") return;
+    pickCard(pendingPick);
+    setPendingPick(null);
     updateMyPresence({ pickedThisRound: true });
   };
+
+  const cancelPick = () => setPendingPick(null);
 
   // Coordinator: when every drafter (self + relevant others) has flipped
   // pickedThisRound, fire the advance transaction. All clients may fire — the
@@ -273,9 +356,12 @@ export function DraftRoom() {
   }, [drafters, draftersPickedCount, myPresence.pickedThisRound, advanceIfReady]);
 
   // Reset own pickedThisRound flag when the round/pick advances so we can
-  // pick again. Also resets on mount and on completion.
+  // pick again. Also resets on mount and on completion. Pending pick is
+  // cleared in lockstep so a stale selection from the previous pack doesn't
+  // bleed into the next one.
   useEffect(() => {
     updateMyPresence({ pickedThisRound: false });
+    setPendingPick(null);
   }, [currentRound, pickNumber, draftState, updateMyPresence]);
 
   // Once the draft completes (state="playing"), the drafter moves privately
@@ -303,6 +389,7 @@ export function DraftRoom() {
 
   return (
     <div style={pageStyle}>
+      <HomeLink />
       <div style={mainStyle}>
         <div style={headerStyle}>
           <Heading
@@ -344,22 +431,73 @@ export function DraftRoom() {
           </div>
         )}
 
+        {pendingPick && !myPresence.pickedThisRound && (
+          <div style={confirmBarStyle} role="status" aria-live="polite">
+            <Text
+              variant="body-01"
+              as="span"
+              style={{
+                color: "var(--canopy-ds-color-text-icon-text-default)",
+                flex: 1,
+                minWidth: 0,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              Pick <strong>{pendingPick.name}</strong>?
+            </Text>
+            <button
+              type="button"
+              onClick={cancelPick}
+              style={cancelButtonStyle}
+              aria-label="Cancel pick"
+            >
+              Cancel
+            </button>
+            <GlassButton
+              size="md"
+              onClick={confirmPick}
+              aria-label={`Confirm pick: ${pendingPick.name}`}
+            >
+              <Text
+                variant="body-01"
+                as="span"
+                style={{ color: "var(--canopy-ds-color-text-icon-text-default)" }}
+              >
+                Confirm pick
+              </Text>
+            </GlassButton>
+          </div>
+        )}
+
         {myPack && myPack.cards.length > 0 ? (
           <div style={gridStyle}>
             {myPack.cards.map((card, i) => {
               const disabled = myPresence.pickedThisRound;
               const url = cardImageUrl(card);
+              const isPending = pendingPick?.id === card.id;
               return (
                 <button
                   key={`${card.id}-${i}`}
                   type="button"
-                  onClick={() => handlePick(card)}
+                  onClick={() => handleCardClick(card)}
+                  onMouseEnter={(e) => preview.show(e, card)}
+                  onMouseLeave={() => preview.hide(card)}
+                  onFocus={(e) => preview.show(e, card)}
+                  onBlur={() => preview.hide(card)}
                   disabled={disabled}
-                  aria-label={`Pick ${card.name}`}
+                  aria-label={isPending ? `Deselect ${card.name}` : `Select ${card.name} to pick`}
+                  aria-pressed={isPending}
                   style={{
                     ...cardButtonStyle,
                     cursor: disabled ? "default" : "pointer",
-                    opacity: disabled ? 0.55 : 1,
+                    opacity: disabled ? 0.55 : pendingPick && !isPending ? 0.7 : 1,
+                    border: isPending
+                      ? "2px solid var(--canopy-ds-color-border-border-brand, var(--canopy-ds-color-text-icon-text-default))"
+                      : "2px solid transparent",
+                    borderRadius: "var(--canopy-ds-radius-md)",
+                    padding: "var(--canopy-ds-spacing-2xs)",
                   }}
                 >
                   <div style={cardWrapStyle}>
@@ -429,20 +567,34 @@ export function DraftRoom() {
           </Text>
         ) : (
           <ol style={poolListStyle}>
-            {myPool.map((card, i) => (
-              <li key={`${card.id}-${i}`}>
-                <Text
-                  variant="caption-01"
-                  as="span"
-                  style={{ color: "var(--canopy-ds-color-text-icon-text-default)" }}
+            {myPool.map((card, i) => {
+              const cost = manaCostFor(card);
+              return (
+                <li
+                  key={`${card.id}-${i}`}
+                  style={poolItemStyle}
+                  onMouseEnter={(e) => preview.show(e, card)}
+                  onMouseLeave={() => preview.hide(card)}
                 >
-                  {i + 1}. {card.name}
-                </Text>
-              </li>
-            ))}
+                  <Text
+                    variant="caption-01"
+                    as="span"
+                    style={poolNameStyle}
+                    title={card.name}
+                  >
+                    {i + 1}. {card.name}
+                  </Text>
+                  {cost && (
+                    <ManaCost cost={cost} symbols={manaSymbols} size={12} />
+                  )}
+                </li>
+              );
+            })}
           </ol>
         )}
       </aside>
+
+      <CardPreviewOverlay hovered={preview.hovered} />
     </div>
   );
 }
